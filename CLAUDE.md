@@ -30,6 +30,11 @@ Layered multi-agent system: CEO (Claude Opus 4.6 via Paperclip) orchestrates spe
 - async_mode: "sync" for all skill writes
 - visibility: "private" on all memory items
 - Scheduler: enabled, local queue (no Redis)
+- **Embedder:** local sentence-transformers (all-MiniLM-L6-v2, 384 dim) — no API dependency
+- **MEMRADER:** DeepSeek V3 (deepseek-chat) — MiniMax broke extraction with `<think>` tags
+- **Chunk size:** 4000 tokens (was 1600 — too small for research briefs)
+- **IMPORTANT:** No API-level cube isolation — trust-based via SOUL.md only. Agents are told to only access their own cubes.
+- **IMPORTANT:** Skills must chunk long output into ≤500-word blocks before POSTing to MemOS for best extraction quality.
 
 ## Domain Routing Rules (enforced in skills)
 - `reddit.com` → always rewrite to `old.reddit.com`
