@@ -100,6 +100,61 @@ curl -s -X GET "https://api.plusvibe.ai/v2/..." \
 | **Placement Testing** | Create parent test | Recurring inbox placement tests |
 | | Get test results | Deliverability by provider |
 
+### Key Endpoint Details (verified from docs)
+
+#### Create Campaign
+```bash
+POST https://api.plusvibe.ai/api/v1/campaign/add/campaign
+Body: {"workspace_id": "...", "camp_name": "Campaign Name"}
+Response: {"status": "success", "id": "campaign_id"}
+```
+
+#### Add Leads to Campaign
+```bash
+POST https://api.plusvibe.ai/api/v1/lead/add
+Body: {
+  "workspace_id": "...",
+  "campaign_id": "...",
+  "skip_if_in_workspace": false,
+  "skip_lead_in_active_pause_camp": true,
+  "leads": [
+    {
+      "email": "lead@example.com",
+      "first_name": "Jane",
+      "last_name": "Smith",
+      "company_name": "Example Corp",
+      "company_website": "example.com",
+      "linkedin_person_url": "linkedin.com/in/jane",
+      "custom_variables": {"functional_role": "Marketing"}
+    }
+  ]
+}
+Response: {"status": "success", "total_sent": 10, "leads_uploaded": 8, "duplicate_email_count": 1}
+```
+
+#### Get/Search Lead
+```bash
+GET https://api.plusvibe.ai/api/v1/lead/get?workspace_id=...&email=lead@example.com
+Response: {id, campaign, status (CONTACTED/etc), contact, email_opened, email_replied, lead_data: {first_name, company_name, is_email_verified (VALID/INVALID/RISKY), ...}}
+```
+
+#### Add Webhook
+```bash
+POST https://api.plusvibe.ai/api/v1/hook/add
+Body: {
+  "workspace_id": "...",
+  "name": "My Webhook",
+  "url": "https://your-endpoint.com/webhook",
+  "camp_ids": ["campaign_id_1"],
+  "event_types": ["LEAD_MARKED_AS_INTERESTED", "ALL_EMAIL_REPLIES"],
+  "ignore_ooo": 1,
+  "ignore_automatic": 0
+}
+```
+
+#### Webhook Event Types
+FIRST_EMAIL_REPLIES, ALL_EMAIL_REPLIES, ALL_POSITIVE_REPLIES, LEAD_MARKED_AS_INTERESTED, EMAIL_SENT, BOUNCED_EMAIL
+
 ### Full API docs: https://developer.plusvibe.ai/llms.txt
 
 ---
