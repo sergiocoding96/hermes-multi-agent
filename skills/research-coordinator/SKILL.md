@@ -295,6 +295,90 @@ Order events chronologically and identify:
 
 ---
 
+## Phase 3.5 -- Quality Score Self-Evaluation
+
+After synthesis but BEFORE writing the final output, compute a quality score.
+
+### Score Formula (0.0 to 10.0)
+
+| Component | Weight | How to score |
+|-----------|--------|-------------|
+| source_count | 25% | 0 sources=0, 1-3=4, 4-7=6, 8-15=8, 16+=10 |
+| domain_coverage | 25% | (streams with non-empty results / streams attempted) * 10 |
+| freshness | 20% | (sources from last 30 days / total sources) * 10 |
+| depth | 20% | avg sources per stream: 0=0, 1-2=4, 3-5=7, 6+=10 |
+| zero_result_penalty | 10% | 10 - (streams with 0 results * 3.33), floor 0 |
+
+### Computation
+
+After collecting all researcher reports, compute:
+```
+source_count_raw = [count unique URLs across all reports]
+domain_cov_raw = [streams_with_results / streams_attempted]
+freshness_raw = [sources_last_30d / total_sources]
+depth_raw = [avg sources per active stream]
+zero_streams = [streams with zero results]
+
+quality_score = round(
+    score_source_count(source_count_raw) * 0.25 +
+    domain_cov_raw * 10 * 0.25 +
+    freshness_raw * 10 * 0.20 +
+    score_depth(depth_raw) * 0.20 +
+    max(0, 10 - zero_streams * 3.33) * 0.10
+, 1)
+```
+
+Include at the end of the brief:
+```
+---
+## Quality Metadata
+- quality_score: [X.X]/10
+- sources: [N] unique URLs
+- streams: [N attempted] / [N with results]
+- freshness: [N]% from last 30 days
+- zero-result streams: [list if any]
+```
+
+---
+
+## Phase 4 -- MemOS Dual-Write
+
+After writing the research brief to the chat, persist key findings to MemOS.
+
+### Write Protocol
+
+For each Key Finding in the brief:
+```bash
+curl -s -X POST http://localhost:8001/product/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "research-agent",
+    "writable_cube_ids": ["research-cube"],
+    "async_mode": "sync",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "KEY FINDING: [finding title]\n\nConfidence: [H/M/L]\nSources: [domain list]\nDetails: [2-4 sentence summary]\nDate range: [period]\nquality_score: [computed score]"
+      }
+    ],
+    "custom_tags": ["research", "[topic-slug]"],
+    "info": {
+      "source_type": "research_output",
+      "quality_score": [number],
+      "topic": "[original query]"
+    }
+  }'
+```
+
+### Write Rules
+- One POST per Key Finding (keep memories atomic)
+- Also write one summary memory with the Executive Summary
+- async_mode MUST be "sync" -- CEO needs confirmed writes
+- If POST returns non-200, log the error but DO NOT retry (avoid token burn)
+- Include quality_score in the info metadata of every write
+
+---
+
 ## Depth Reference
 
 | Depth | Streams | Time estimate | Use when |
