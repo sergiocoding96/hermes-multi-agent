@@ -1,0 +1,7 @@
+*.pdf
+node_modules/
+.memos/
+.claude/
+.agents/
+skills-lock.json
+*.txt
