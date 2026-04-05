@@ -67,15 +67,14 @@ HERMES SESSION
   └── POST /add → MemOS {user_id: "research-agent", cube_id: "research-cube"}
         │ dual-write
         ▼
-MEMOS (SQLite + vector, localhost:8080)
-  ├── research-cube    → owned by research-agent, shared with CEO
-  ├── email-cube       → owned by email-agent, shared with CEO
-  ├── marketing-cube   → owned by marketing-agent, shared with CEO
-  └── ceo-cube         → ROOT role, automatically sees ALL cubes
-        │ CEO searches across all cubes
+MEMOS (Qdrant + Neo4j + SQLite, localhost:8001)
+  ├── research-cube    → owned by research-agent (GeneralText + TreeText)
+  ├── email-mkt-cube   → owned by email-marketing-agent (GeneralText + TreeText + PreferenceText)
+  └── ceo-cube         → ROOT role, CompositeCubeView across ALL cubes
+        │ CEO searches across all cubes via CompositeCubeView
         ▼
 CEO retrieves cross-agent synthesis when needed:
-  POST /search {user_id: "ceo", install_cube_ids: ["research-cube", "email-cube", ...]}
+  POST /product/search {user_id: "ceo", readable_cube_ids: ["research-cube", "email-mkt-cube", ...]}
 ```
 
 **Key token-burn principle:** Paperclip agents communicate ONLY via MemOS (shared state), never agent-to-agent. CEO sends ONE task. Hermes handles all parallelism internally via `sessions_spawn`. No Paperclip orchestration overhead on sub-tasks.
@@ -392,6 +391,30 @@ Each agent gets one **MemCube** — an isolated memory container. A MemCube cont
 - `pref_mem`: preference/behavioral memories
 - `act_mem`: activation memory (KV cache snapshots)
 - `para_mem`: parametric memory (model adaptation)
+
+### Memory Type Decisions (finalized April 5)
+
+**Architecture:** MOS v2.0 — legacy `MOS` class deprecated. Use `Components + Handlers` with `SingleCubeView` (per agent) and `CompositeCubeView` (CEO reads all cubes, results include `cube_id` for source identification).
+
+**Memory types per agent (all agents get GeneralText + TreeText):**
+
+| Agent | `GeneralTextMemory` | `TreeTextMemory` | `PreferenceTextMemory` | MemReader Mode |
+|-------|:---:|:---:|:---:|:---:|
+| CEO | ✅ | ✅ | ❌ | Fine |
+| research-agent | ✅ | ✅ | ❌ | Fine |
+| email-marketing-agent | ✅ | ✅ | ✅ | Fine |
+
+**Rationale:** MiniMax tokens are cheap. TreeText (Neo4j graph) gives vector + graph traversal search on every agent — strictly better recall. Fine MemReader mode uses LLM to extract structured facts/entities/metadata from every write. PreferenceText only on email-marketing (user communication style memory).
+
+**MemReader modes:**
+- **Fast mode**: No LLM call, just chunking + embedding. Millisecond latency. For operational/transient writes.
+- **Fine mode**: LLM extracts structured facts, entities, confidence, metadata. Used for all agent writes since MiniMax is cheap.
+
+**Scheduler:** Enabled, local queue (`DEFAULT_USE_REDIS_QUEUE=false`). Manages working memory → long-term memory flow. No Redis needed.
+
+**Write mode:** `async_mode: "sync"` for all skill writes (confirmed write before CEO reads). `async` only for background bulk imports.
+
+**Visibility:** `"private"` on all memory items. Access control at cube level via ACL.
 
 ### Multi-Agent Isolation Model
 ```python
