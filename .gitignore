@@ -1,7 +1,8 @@
-*.pdf
+# *.pdf — now included
 node_modules/
 .memos/
 .claude/
 .agents/
 skills-lock.json
 *.txt
+skills-lock.json

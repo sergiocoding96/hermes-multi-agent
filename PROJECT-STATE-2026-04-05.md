@@ -166,8 +166,11 @@ memory:
 ### MemOS (local)
 **Installed at:** `/home/openclaw/Coding/MemOS/`  
 **Python package:** `memos` (installed at `~/.local/lib/python3.12/site-packages/memos`)  
-**OpenClaw plugin:** `/home/openclaw/Coding/MemOS/apps/memos-local-openclaw/`  
-**REST API port** (when running): `http://localhost:8080`
+**OpenClaw plugin:** `/home/openclaw/Coding/MemOS/apps/memos-local-openclaw/` (port 18799, OpenClaw-specific)  
+**Python REST server port:** `http://localhost:8001`  
+**Start command:** `cd /home/openclaw/Coding/MemOS && poetry run uvicorn memos.api.server_api:app --host 0.0.0.0 --port 8001`  
+**Dependencies already running:** Neo4j (bolt://localhost:7687) + Qdrant (localhost:6333)  
+**Config:** `/home/openclaw/Coding/MemOS/.env` — uses MiniMax M2.7 for LLM + embo-01 for embeddings, tree_text memory type with Neo4j backend
 
 ---
 
@@ -410,61 +413,106 @@ def search(query, user_id):
     # Returns merged results from all cubes the user can access
 ```
 
+### Infrastructure Requirements (VERIFIED)
+
+MemOS Python server needs these services — **all already running locally:**
+- **Neo4j** → `bolt://localhost:7687` ✅ (confirmed listening)
+- **Qdrant** → `localhost:6333` ✅ (v1.17.1 confirmed running)
+- **MiniMax API** → used for LLM + embeddings (configured in .env)
+
+**Two separate MemOS systems — do NOT confuse them:**
+1. **OpenClaw plugin** (`memos-local-openclaw`, port 18799) — SQLite-only, works with OpenClaw agents via plugin hooks. Already installed. Cannot receive arbitrary HTTP POSTs from Hermes.
+2. **Python REST server** (port 8001) — full multi-user/multi-cube system with Qdrant+Neo4j. This is what Hermes skills call via `curl`. Needs to be started.
+
 ### Setup for Your Multi-Agent System
 
 ```python
+# setup-memos-agents.py — run once to provision users and cubes
+# Relies on the Python API, not the REST server
+
 from memos.mem_os.main import MOS
 from memos.mem_user.user_manager import UserRole
+import os
 
-mos = MOS.from_config(config)
+os.chdir("/home/openclaw/Coding/MemOS")
 
-# Create users (one per agent)
+mos = MOS.from_config(config)  # config loaded from .env
+
+# Create users (one per Paperclip/Hermes agent)
 mos.create_user(user_id="ceo",               role=UserRole.ROOT)
 mos.create_user(user_id="research-agent",    role=UserRole.USER)
 mos.create_user(user_id="email-agent",       role=UserRole.USER)
 mos.create_user(user_id="marketing-agent",   role=UserRole.USER)
+# Add more agents as needed — one user + one cube per agent
 
-# Create isolated cubes
-mos.create_cube_for_user(cube_name="research-cube",   owner_id="research-agent")
-mos.create_cube_for_user(cube_name="email-cube",       owner_id="email-agent")
-mos.create_cube_for_user(cube_name="marketing-cube",   owner_id="marketing-agent")
-mos.create_cube_for_user(cube_name="ceo-cube",         owner_id="ceo")
+# Create isolated cubes (one per agent)
+mos.create_cube_for_user(cube_name="research-cube",   owner_id="research-agent",  cube_id="research-cube")
+mos.create_cube_for_user(cube_name="email-cube",       owner_id="email-agent",     cube_id="email-cube")
+mos.create_cube_for_user(cube_name="marketing-cube",   owner_id="marketing-agent", cube_id="marketing-cube")
+mos.create_cube_for_user(cube_name="ceo-cube",         owner_id="ceo",             cube_id="ceo-cube")
 
-# Grant CEO access to all agent cubes
+# Grant CEO read access to all agent cubes
 mos.share_cube_with_user(cube_id="research-cube",   target_user_id="ceo")
 mos.share_cube_with_user(cube_id="email-cube",       target_user_id="ceo")
 mos.share_cube_with_user(cube_id="marketing-cube",   target_user_id="ceo")
 
 # Result:
-# research-agent → sees ONLY research-cube (isolated)
-# email-agent    → sees ONLY email-cube (isolated)
-# ceo (ROOT)     → sees ALL cubes in parallel search
+# research-agent → sees ONLY research-cube (isolated, private)
+# email-agent    → sees ONLY email-cube (isolated, private)
+# ceo (ROOT)     → sees ALL cubes in parallel search automatically
 ```
 
-### REST API (when MemOS server is running on port 8080)
+### REST API — Verified from OpenAPI spec + examples
+
+**Server:** `http://localhost:8001`  
+**All endpoints have `/product/` prefix**
 
 ```bash
-# Write a memory (from Hermes skill)
-curl -X POST http://localhost:8080/add \
+# ⚠️ CRITICAL: mem_cube_id and memory_content are DEPRECATED.
+# Use writable_cube_ids (list) and messages (list) instead.
+
+# Write a memory from Hermes skill — use async_mode=sync to confirm write
+curl -X POST http://localhost:8001/product/add \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "research-agent",
-    "mem_cube_id": "research-cube",
-    "memory_content": "KEY FINDING: autoresearch loop needs val_bpb metric..."
+    "writable_cube_ids": ["research-cube"],
+    "async_mode": "sync",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "KEY FINDING: autoresearch loop pattern — val_bpb metric, 5-min budget, git keep/revert"
+      }
+    ],
+    "custom_tags": ["research", "autoresearch"],
+    "info": {"source_type": "research_output", "task_id": "TASK_ID_HERE"}
   }'
 
-# CEO cross-agent search
-curl -X POST http://localhost:8080/search \
+# CEO cross-agent search — readable_cube_ids scopes the search
+curl -X POST http://localhost:8001/product/search \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "ceo",
-    "query": "what has the research agent found this week"
+    "query": "what has the research agent found this week",
+    "readable_cube_ids": ["research-cube", "email-cube", "marketing-cube"],
+    "top_k": 10,
+    "mode": "fast",
+    "include_preference": false
   }'
-# → automatically searches all CEO-accessible cubes in parallel
 
-# Feedback endpoint
-POST /feedback  — rate memories up/down (improves future retrieval)
+# All endpoints:
+POST /product/add           — write memory
+POST /product/search        — vector+FTS5 search
+POST /product/get_all       — list all memories for user/cube
+POST /product/get_memory    — get specific memory by ID
+POST /product/delete_memory — delete memory
+POST /product/feedback      — rate memories up/down (improves future retrieval)
+POST /product/chat/stream   — chat with memory injection (SSE stream)
+POST /product/chat/complete — chat with memory injection (complete response)
+GET  /product/scheduler/allstatus — monitor async add queue
 ```
+
+**⚠️ Known issue (from docs/product-api-tests.md):** `/product/search` may return empty results if Qdrant indexes weren't created. They auto-create on restart — if search returns empty, restart the MemOS server once.
 
 ### Smart Deduplication (happens automatically on every write)
 1. Exact content-hash check → skip if duplicate
@@ -672,6 +720,36 @@ quality_score = (
 )
 # Scale: 0–10. CEO sets threshold at task start (default: 7.0)
 ```
+
+---
+
+## 11b. MemOS Startup Checklist
+
+Before any agent can write/read MemOS, run this sequence:
+
+```bash
+# 1. Verify dependencies (should already be running)
+curl http://localhost:6333  # Qdrant → {"title":"qdrant","version":"1.17.1",...}
+nc -z localhost 7687 && echo "Neo4j OK"  # Neo4j
+
+# 2. Start MemOS Python server
+cd /home/openclaw/Coding/MemOS
+poetry run uvicorn memos.api.server_api:app --host 0.0.0.0 --port 8001
+
+# 3. Provision users/cubes (first time only)
+cd /home/openclaw/Coding/MemOS
+poetry run python setup-memos-agents.py
+
+# 4. Verify server is up
+curl http://localhost:8001/product/scheduler/allstatus
+
+# 5. Test a write
+curl -X POST http://localhost:8001/product/add \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"research-agent","writable_cube_ids":["research-cube"],"async_mode":"sync","messages":[{"role":"assistant","content":"test memory"}]}'
+```
+
+**If search returns empty results:** restart the server once — Qdrant indexes auto-create on startup.
 
 ---
 
