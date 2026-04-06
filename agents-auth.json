@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "agents": [
+    {
+      "key": "ak_244ce9c7ac4f03ff554d3ab1b064ba41",
+      "user_id": "ceo",
+      "description": "CEO Agent \u2014 Claude Opus 4.6 via Paperclip"
+    },
+    {
+      "key": "ak_c7ca6f1177c15818520313d264aeffdb",
+      "user_id": "research-agent",
+      "description": "Research Agent \u2014 MiniMax M2.7"
+    },
+    {
+      "key": "ak_bd0bae79637c0c46f1fb600504045874",
+      "user_id": "email-marketing-agent",
+      "description": "Email Marketing Agent \u2014 MiniMax M2.7"
+    }
+  ]
+}
