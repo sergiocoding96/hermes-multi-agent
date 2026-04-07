@@ -15,6 +15,21 @@
       "key": "ak_bd0bae79637c0c46f1fb600504045874",
       "user_id": "email-marketing-agent",
       "description": "Email Marketing Agent \u2014 MiniMax M2.7"
+    },
+    {
+      "key": "ak_audit_test_user_alpha_0000000001",
+      "user_id": "audit-alpha",
+      "description": "Audit test user Alpha"
+    },
+    {
+      "key": "ak_audit_test_user_beta_000000000002",
+      "user_id": "audit-beta",
+      "description": "Audit test user Beta"
+    },
+    {
+      "key": "ak_audit_test_user_gamma_00000000003",
+      "user_id": "audit-gamma",
+      "description": "Audit test user Gamma"
     }
   ]
 }
