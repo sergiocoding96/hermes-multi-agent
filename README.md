@@ -6,63 +6,126 @@ Layered multi-agent research and execution architecture using **Paperclip + Herm
 
 A self-improving multi-agent system where:
 - **CEO agent (Claude Opus 4.6)** orchestrates via Paperclip, with access to all agent memories
-- **Specialized Hermes agents** (research, email, marketing, etc.) each with isolated MemOS memory cubes
+- **Specialized Hermes agents** (research, email marketing) each with isolated profiles, memory, and SOUL.md
 - **Two feedback loops**: soft (user feedback → skill patches) + hard (Karpathy-style metric threshold → auto-patch → re-run)
 - **Skills evolve** from execution history — every failed or suboptimal run improves the skill for next time
+- **RL trajectory data** collected from every session for future model fine-tuning
 
 ## Architecture
 
 ```
 CEO (Claude Opus 4.6, Paperclip)
-  └── issues ONE task → Hermes Worker (via hermes-paperclip-adapter)
-          └── hermes chat -q "..." --resume {session_id}
+  └── dispatches tasks → Hermes Workers (via hermes_lib.py or CLI)
+          ├── research-agent profile (isolated memory + SOUL.md)
+          ├── email-marketing profile (isolated memory + SOUL.md)
+          └── default profile (general purpose)
                   └── sessions_spawn(≤3 parallel domain researchers)
-                          └── writes to Hermes MEMORY.md + MemOS cube
+                          └── writes to Hermes memory + MemOS cube
                                   └── CEO searches all cubes for synthesis
 ```
 
 Token burn prevention: agents communicate **only via MemOS shared state**, never agent-to-agent.
 
+## Infrastructure Stack
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ LLM Layer                                                     │
+│   Primary:  MiniMax M2.7 (via api.minimax.io/anthropic)      │
+│   Fallback: DeepSeek V3 (auto-failover on MiniMax errors)    │
+│   Vision:   Gemini 2.5 Flash (screenshot analysis)           │
+│   Compression: MiniMax M2.7 (context summarization)          │
+├──────────────────────────────────────────────────────────────┤
+│ Web Stack                                                     │
+│   Search:   Firecrawl (:3002) → SearXNG (:8888)             │
+│             Google+Bing+DDG+Startpage, free, unlimited        │
+│   Scraping: Firecrawl → Playwright service (JS rendering)    │
+│   Anti-bot: Camofox (:9377) — Camoufox Firefox fork          │
+│             C++ fingerprint spoofing, bypasses Cloudflare     │
+├──────────────────────────────────────────────────────────────┤
+│ Memory Layer                                                  │
+│   Built-in:    MEMORY.md + USER.md (per profile, 3000 chars) │
+│   Holographic: Local SQLite — trust scoring, entity graph,    │
+│                contradiction detection, compositional queries  │
+│   MemOS:       Qdrant + Neo4j + SQLite — cross-agent shared  │
+│                knowledge with isolated MemCubes per agent      │
+├──────────────────────────────────────────────────────────────┤
+│ Interfaces                                                    │
+│   CLI:      hermes chat / hermes -p research-agent chat      │
+│   Telegram: Gateway with auto-thread, cron delivery          │
+│   Web UI:   Open WebUI (:3001) → Hermes API (:8642)         │
+│   Python:   hermes_lib.py (hermes_chat, dispatch_to_hermes)  │
+├──────────────────────────────────────────────────────────────┤
+│ Automation                                                    │
+│   6 cron jobs: memory consolidation, skill audit, health      │
+│   check, tech briefing, session prune, trajectory export      │
+│   quality-monitor plugin: logs tool calls, tracks scores      │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## Agent Profiles
+
+| Profile | Role | SOUL.md | Skills |
+|---------|------|---------|--------|
+| `default` | General purpose, CLI/Telegram | kawaii personality | All 97+ skills |
+| `research-agent` | Multi-stream research coordinator | Depth over speed, source everything, parallel by default | research-coordinator + 15 research skills |
+| `email-marketing` | PlusVibe email campaigns | Data-driven, test everything, segment first | email-marketing-plusvibe |
+
+All profiles share skills via `external_dirs` pointing to `~/.hermes/skills/` and the [`badass-skills`](https://github.com/sergiocoding96/badass-skills) GitHub repo. Memory is fully isolated per profile.
+
 ## Research Skills
 
 | Skill | Purpose |
 |-------|---------|
-| [`research-coordinator`](skills/research-coordinator/SKILL.md) | Master orchestration — decomposes query into parallel streams, synthesizes intelligence brief |
-| [`social-media-researcher`](skills/social-media-researcher/SKILL.md) | X/Twitter, YouTube, Reddit coverage |
-| [`code-researcher`](skills/code-researcher/SKILL.md) | GitHub and Hugging Face ecosystem |
-| [`academic-researcher`](skills/academic-researcher/SKILL.md) | arXiv papers, Hacker News technical discourse |
-| [`market-intelligence-researcher`](skills/market-intelligence-researcher/SKILL.md) | Polymarket prediction markets + news |
-| [`hn-research`](skills/hn-research/SKILL.md) | Hacker News thread discovery and extraction |
-| [`web-research`](skills/web-research/SKILL.md) | General web with domain routing rules |
+| `research-coordinator` | Master orchestration — decomposes query into parallel streams, synthesizes intelligence brief |
+| `social-media-researcher` | X/Twitter, YouTube, Reddit coverage |
+| `code-researcher` | GitHub and Hugging Face ecosystem |
+| `academic-researcher` | arXiv papers, Hacker News technical discourse |
+| `market-intelligence-researcher` | Polymarket prediction markets + news |
+| `hn-research` | Hacker News thread discovery and extraction |
+| `reddit-research` | Reddit-specific research via old.reddit.com |
+| `github-research` | GitHub repo analysis via `gh` CLI |
+| `nano-banana-2` | Image generation via Gemini 3.1 Flash (inference.sh) |
 
-## Key Infrastructure
+## Web Stack Details
 
-- **Hermes Agent** (MiniMax M2.7 default) — [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
-- **Paperclip connector** — [NousResearch/hermes-paperclip-adapter](https://github.com/NousResearch/hermes-paperclip-adapter)
-- **Firecrawl** (self-hosted at `localhost:3002`) — web scraping backbone
-- **MemOS** — [MemTensor/MemOS](https://github.com/MemTensor/MemOS) — multi-agent memory with isolated cubes per agent
+### Search (free, unlimited)
+```
+User query → Firecrawl /v1/search → SearXNG → Google+Bing+DDG+Startpage → ranked results
+```
+SearXNG scores results by cross-engine agreement (found by 3 engines = high score). Self-hosted, no API credits, no rate limits.
 
-## Critical Configuration
-
-```env
-# ~/.hermes/.env
-FIRECRAWL_API_URL=http://localhost:3002   # REQUIRED — without this all web_extract calls fail
+### Scraping
+```
+URL → Firecrawl /v1/scrape → Playwright service (Docker) → JS rendered → clean markdown
 ```
 
-```env
-# firecrawl/.env
-NUM_WORKERS_PER_QUEUE=4      # DO NOT set above 4 — causes CPU stall
-MAX_CONCURRENT_JOBS=8
+### Anti-bot (Cloudflare bypass)
 ```
+browser_navigate(url) → Camofox → Camoufox (Firefox fork) → C++ fingerprint spoofing → page loads
+browser_snapshot() → accessibility tree with element refs → agent can click/type/scroll
+```
+Tested and proven on Idealista, survives Cloudflare challenges. `managed_persistence: true` keeps cookies across sessions.
 
-## Domain Routing Rules (baked into skills)
+### Domain Routing Rules
 
 | Domain | Rule |
 |--------|------|
-| `reddit.com` | Always rewrite to `old.reddit.com` — www returns JS shell (0 chars) |
-| `github.com` | Basic Firecrawl only — Playwright/mobile flags trigger GitHub block |
-| `raw.githubusercontent.com` | Best for raw file content |
-| Brave search | Max 3 parallel calls — rate limit ~10 req/min |
+| `reddit.com` | Always rewrite to `old.reddit.com` — www returns JS shell |
+| `github.com` | Basic Firecrawl only — Playwright triggers blocks |
+| Anti-bot sites | Use Camofox `browser_navigate` + `browser_snapshot` |
+| `arxiv.org` | REST API for bulk, `web_extract` for single papers |
+| `news.ycombinator.com` | Plain HTML, reliable with `web_extract` |
+
+## Memory Architecture
+
+### Three layers, complementary:
+
+1. **Built-in (MEMORY.md + USER.md)** — per profile, always in system prompt, 3000 char limit. Agent's personal notes and user profile.
+
+2. **Holographic provider** — local SQLite alongside MEMORY.md. Adds trust scoring (0.0-1.0 per fact), entity graph (`probe("Sergio")` returns all facts about you), contradiction detection, and compositional queries. Zero external deps.
+
+3. **MemOS** — cross-agent structured knowledge. CEO has ROOT access to all cubes, workers see only their own. Qdrant vectors + Neo4j graph + SQLite metadata. MEMRADER extraction via DeepSeek V3.
 
 ## Self-Improving Feedback Loops
 
@@ -75,26 +138,160 @@ quality_score = source_count(25%) + domain_coverage(25%) + freshness(20%) + dept
 If score < threshold → CEO patches weakest stream → re-run → keep if improved, revert if not
 ```
 
-Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch) (65k stars) — the same "define one metric, atomic change, keep if better, revert if not" loop applied to skills instead of ML training.
+### Quality Monitor Plugin
+The `quality-monitor` plugin silently hooks into every tool call:
+- Logs all activity to `~/.hermes/logs/activity.jsonl`
+- Captures quality scores to `~/.hermes/logs/quality.jsonl`
+- Warns on scores below 5.0 (unacceptable) and 7.5 (moderate)
 
-## MemOS Multi-Agent Memory Model
+### RL Trajectory Collection
+Every session is saved as JSONL. Nightly cron exports to `~/.hermes/trajectories/` in ShareGPT-compatible format. When ready, fine-tune an open model (Hermes-3-Llama) on successful trajectories using the built-in Atropos+Tinker RL pipeline.
 
+## Programmatic Access
+
+### Python library (`hermes_lib.py`)
 ```python
-# Each agent gets an isolated cube; CEO sees all
-mos.create_user(user_id="ceo", role=UserRole.ROOT)           # ROOT sees all cubes
-mos.create_user(user_id="research-agent", role=UserRole.USER) # USER sees own cube only
-mos.create_cube_for_user(cube_name="research-cube", owner_id="research-agent")
-mos.share_cube_with_user(cube_id="research-cube", target_user_id="ceo")
+from hermes_lib import hermes_chat, hermes_research, dispatch_to_hermes
+
+# Simple query
+response = hermes_chat("What skills do I have?")
+
+# Research via research-agent profile
+brief = hermes_research("AI agents in real estate 2026")
+
+# Paperclip CEO → Hermes worker dispatch
+result = dispatch_to_hermes(
+    task="Research competitor pricing for PlusVibe",
+    agent="research-agent",
+    skills=["research-coordinator"]
+)
 ```
 
-## Project State
+### OpenAI-compatible API
+```bash
+curl http://localhost:8642/v1/chat/completions \
+  -H "Authorization: Bearer hermes-local-api-2026" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "hermes-agent", "messages": [{"role": "user", "content": "Hello!"}]}'
+```
 
-Full session report (architecture, current state, next steps, all learnings): [`PROJECT-STATE-2026-04-05.md`](PROJECT-STATE-2026-04-05.md)
+### Web UI
+Open WebUI at `http://localhost:3001` — full chat interface with conversation history, connected to Hermes API server.
+
+## Deployment
+
+### This machine
+```bash
+# Bootstrap web stack (Firecrawl + SearXNG + Camofox)
+./setup-web-stack.sh
+
+# Start MemOS
+cd ~/Coding/MemOS && python -m memos.api.server
+
+# Provisioning
+python setup-memos-agents.py
+
+# Test
+hermes chat -q "Research [topic]" --skill research-coordinator
+hermes -p research-agent chat -q "Who are you?"
+```
+
+### New machine
+```bash
+git clone https://github.com/sergiocoding96/hermes-deploy
+cd hermes-deploy && ./install.sh
+# Fill in API keys in ~/.hermes/.env
+```
+
+### Health checks
+```bash
+curl -s localhost:9377/health          # Camofox
+curl -s localhost:8888/search?q=test&format=json  # SearXNG
+curl -s localhost:3002/v1/search -X POST -H "Content-Type: application/json" -d '{"query":"test","limit":1}'  # Firecrawl
+curl -s localhost:8642/health          # Hermes API server
+curl -s localhost:3001                 # Open WebUI
+```
+
+## Configuration Summary (2026-04-07)
+
+### Changes from default Hermes install
+
+| Setting | Default | Our Setup | Why |
+|---------|---------|-----------|-----|
+| `web.backend` | brave | **firecrawl** | Free unlimited search via SearXNG, no API credits |
+| `fallback_providers` | none | **deepseek-chat** | Auto-failover if MiniMax goes down |
+| `memory.provider` | none | **holographic** | Trust scoring, entity graph, contradiction detection |
+| `memory.memory_char_limit` | 2200 | **3000** | More room for multi-project context |
+| `terminal.timeout` | 180 | **600** | Long research tasks need 10 min |
+| `delegation.max_iterations` | 50 | **90** | Match main agent turns, deep research needs space |
+| `delegation.default_toolsets` | terminal,file,web | + **skills** | Subagents can load skills |
+| `auxiliary.vision` | auto | **gemini-2.5-flash-preview** | MiniMax has no vision model |
+| `compression.summary_model` | gemini-3-flash | **MiniMax-M2.7** | No external Google dependency |
+| `stt.provider` | local/whisper | **deepgram** | Better Spanish, $200 free credit |
+| `browser.camofox.managed_persistence` | false | **true** | Keep cookies across sessions |
+| `browser.allow_private_urls` | false | **true** | Agents can browse localhost services |
+| `privacy.redact_pii` | false | **true** | Scrub personal data before LLM API |
+| `timezone` | empty | **Europe/Madrid** | Correct cron scheduling |
+| `display.show_cost` | false | **true** | Track token spend |
+| `skills.external_dirs` | empty | **badass-skills repo** | Shared skills across all profiles |
+
+### API Keys
+
+| Key | Service | Purpose |
+|-----|---------|---------|
+| `MINIMAX_API_KEY` | MiniMax | Primary LLM + compression |
+| `DEEPSEEK_API_KEY` | DeepSeek | Fallback LLM + MemOS MEMRADER |
+| `GEMINI_API_KEY` | Google | Vision + future image gen |
+| `DEEPGRAM_API_KEY` | Deepgram | Speech-to-text ($200 credit) |
+| `TELEGRAM_BOT_TOKEN` | Telegram | Messaging gateway |
+| `BRAVE_API_KEY` | Brave | Kept as backup (credits exhausted) |
+
+### Cron Jobs
+
+| Job | Schedule | Purpose |
+|-----|----------|---------|
+| Nightly Memory Consolidation | 2 AM | Consolidate memory entries |
+| Daily Skill Audit & Creation | 9 AM | Check skills for improvements |
+| Daily System Health Audit | 7 AM | Verify Camofox, Firecrawl, SearXNG, MemOS |
+| Daily Tech Briefing | 5:15 AM | Morning briefing delivered to Telegram |
+| Weekly Session Cleanup | Sun 3 AM | Prune sessions older than 30 days |
+| Nightly Trajectory Export | 3:30 AM | Export sessions to JSONL for RL training |
+
+### Boot Persistence
+
+Both Firecrawl (Docker compose) and Camofox (@reboot cron) start automatically on reboot. Open WebUI Docker container has `--restart unless-stopped`.
+
+## Repositories
+
+| Repo | Purpose |
+|------|---------|
+| [sergiocoding96/hermes-deploy](https://github.com/sergiocoding96/hermes-deploy) (private) | Optimal Hermes config, profiles, plugins, scripts for deployment |
+| [sergiocoding96/badass-skills](https://github.com/sergiocoding96/badass-skills) | Shared skills across all agents and machines |
+
+## Setup Audit Score: 7.3 / 10
+
+Full audit: [`HERMES-SETUP-AUDIT-2026-04-06.md`](HERMES-SETUP-AUDIT-2026-04-06.md) ([PDF](HERMES-SETUP-AUDIT-2026-04-06.pdf))
+
+### Strengths (8-10/10)
+Skills (10), Browser/Camofox (10), Web Search (9), Memory (9), Compression (9), Cron (9), STT/Voice (9), Vision (8), Checkpoints (8), Context Files (8), Delegation (8), Web UI (8), Sessions (8)
+
+### Gaps to close for 8.0+
+- Webhooks (0) — GitHub PR auto-review not configured
+- MCP (0) — external tool servers not connected
+- MemOS integration (6) — waiting for MemOS to be perfected, then build native plugin
 
 ## Next Steps
 
-1. Install `hermes-paperclip-adapter` in Paperclip adapter registry
-2. Write MemOS provisioning script (users + cubes + CEO shares)
-3. Add `quality_score` self-eval to `research-coordinator` skill
-4. Add MemOS dual-write (`POST /add`) to skill output step
-5. Add soft feedback handler to CEO `HEARTBEAT.md`
+1. ~~Install web stack (Firecrawl + SearXNG + Camofox)~~ ✅
+2. ~~Fix Camofox crash + Brave credit burnout~~ ✅
+3. ~~Full 99-page docs audit + setup rating~~ ✅
+4. ~~Configure all optimizations (fallback, memory, vision, STT, etc.)~~ ✅
+5. ~~Create hermes-deploy repo~~ ✅
+6. ~~Set up Open WebUI + Python library~~ ✅
+7. ~~Enable RL trajectory collection~~ ✅
+8. Finish MemOS provisioning + build native Hermes plugin
+9. Install hermes-paperclip-adapter in Paperclip
+10. Add webhook route for GitHub PR auto-review
+11. Add Discord + WhatsApp to messaging gateway
+12. Run `infsh login` to activate Nano Banana 2 image generation
+13. Set up hermes gateway as systemd service (`hermes gateway install`)
