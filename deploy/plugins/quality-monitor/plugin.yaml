@@ -1,0 +1,3 @@
+name: quality-monitor
+version: "1.0"
+description: Monitors research output quality and logs scores. Hooks into post_tool_call to capture quality_score from research outputs.

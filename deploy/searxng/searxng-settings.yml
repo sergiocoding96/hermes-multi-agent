@@ -1,0 +1,51 @@
+use_default_settings: true
+
+general:
+  instance_name: "Hermes Search"
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "hermes-local-searxng-secret-key-change-me"
+  bind_address: "0.0.0.0"
+  port: 8080
+  limiter: false
+  image_proxy: false
+  public_instance: false
+
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+  - name: brave
+    engine: brave
+    shortcut: br
+    disabled: false
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+  - name: arxiv
+    engine: arxiv
+    shortcut: ar
+    disabled: false
+  - name: github
+    engine: github
+    shortcut: gh
+    disabled: false

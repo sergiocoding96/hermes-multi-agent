@@ -1,0 +1,11 @@
+name: memos-toolset
+version: "1.0"
+description: MemOS memory store and search — persistent vector memory for agents
+author: openclaw
+requires_env:
+  - MEMOS_API_KEY
+  - MEMOS_USER_ID
+  - MEMOS_CUBE_ID
+provides_tools:
+  - memos_store
+  - memos_search
