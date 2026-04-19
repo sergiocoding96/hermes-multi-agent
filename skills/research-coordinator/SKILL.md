@@ -343,39 +343,69 @@ Include at the end of the brief:
 
 ## Phase 4 -- MemOS Dual-Write
 
-After writing the research brief to the chat, persist key findings to MemOS.
+After writing the research brief to the chat, persist it to MemOS using the
+`memos_store` tool from the memos-toolset plugin. This compounds memory across
+sessions so the CEO and other agents can recall past research.
+
+### Why a tool, not curl
+
+The `memos_store` tool injects identity (user_id, cube_id, API key) from
+profile env vars at call time. The agent never sees credentials, and the write
+goes to the correct cube automatically. Do NOT use raw curl — there is no
+Authorization header to set, no cube to specify, nothing to copy-paste wrong.
 
 ### Write Protocol
 
-For each Key Finding in the brief:
-```bash
-curl -s -X POST http://localhost:8001/product/add \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "research-agent",
-    "writable_cube_ids": ["research-cube"],
-    "async_mode": "sync",
-    "messages": [
-      {
-        "role": "assistant",
-        "content": "KEY FINDING: [finding title]\n\nConfidence: [H/M/L]\nSources: [domain list]\nDetails: [2-4 sentence summary]\nDate range: [period]\nquality_score: [computed score]"
-      }
-    ],
-    "custom_tags": ["research", "[topic-slug]"],
-    "info": {
-      "source_type": "research_output",
-      "quality_score": [number],
-      "topic": "[original query]"
-    }
-  }'
+Derive these once for the whole brief:
+- `topic_slug`: lowercase-hyphenated form of the original query (max 6 words)
+- `session_id`: short id you can reuse across all writes for this run (e.g.
+  `research-YYYYMMDD-HHMM` or the first 8 chars of a hash of the query+date)
+- `quality_score`: the score you computed in Phase 3.5
+
+Then write the following memories in order:
+
+**1. Executive Summary** -- one call, the full Executive Summary text:
+```
+memos_store(
+  content="EXECUTIVE SUMMARY -- <topic>\n\n<full executive summary>\n\nDate range: <period>\nStreams: <which domains>\nquality_score: <score>",
+  tags=["research", "executive-summary", "topic=<topic_slug>", "source=research-coordinator", "session=<session_id>", "quality=<score>"]
+)
 ```
 
+**2. Key Findings** -- one call PER finding (keep memories atomic):
+```
+memos_store(
+  content="KEY FINDING: <finding title>\n\nConfidence: <H/M/L>\nSources: <domain list + 1-3 URLs>\nDetails: <2-4 sentence summary>",
+  tags=["research", "key-finding", "topic=<topic_slug>", "source=research-coordinator", "session=<session_id>", "quality=<score>"]
+)
+```
+
+**3. Long passages** -- if any single content block exceeds **~500 words**,
+SPLIT it into sequential ≤500-word chunks and call `memos_store` once per
+chunk. Add a `chunk=N/M` tag so the chunks can be reassembled:
+```
+memos_store(content="<chunk 1>", tags=[..., "chunk=1/3"])
+memos_store(content="<chunk 2>", tags=[..., "chunk=2/3"])
+memos_store(content="<chunk 3>", tags=[..., "chunk=3/3"])
+```
+A simple word-count split at paragraph boundaries is fine — do not split
+mid-sentence. (When the server-side fast-mode chunker lands, this manual
+chunking can be removed.)
+
 ### Write Rules
-- One POST per Key Finding (keep memories atomic)
-- Also write one summary memory with the Executive Summary
-- async_mode MUST be "sync" -- CEO needs confirmed writes
-- If POST returns non-200, log the error but DO NOT retry (avoid token burn)
-- Include quality_score in the info metadata of every write
+- One `memos_store` call per Key Finding (atomic memories search better)
+- Also one call for the Executive Summary
+- Always include `topic=`, `source=research-coordinator`, `session=`, and
+  `quality=` tags. The `session` tag lets you retrieve all memories from a
+  single run; `quality` lets the hard-feedback loop filter low-score outputs.
+- The tool returns JSON: on success `{"status": "stored", ...}`; on failure
+  `{"status": "error", "error": "...", "detail": "..."}`. If you see an
+  error, **log it in the chat once and CONTINUE the brief** — memory writes
+  are best-effort and must NEVER fail the skill.
+- Do NOT retry on error (avoids token burn and duplicate memories on
+  partial-success races).
+- Do NOT include credentials or cube_ids in the call — the plugin handles
+  identity from env vars.
 
 ---
 
