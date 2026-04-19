@@ -2,21 +2,20 @@
   "version": 2,
   "agents": [
     {
-      "key_hash": "$2b$12$eEGDwiUa7MP0RS4gECFSwuUXhkGpHwWNe0Wj05j78GQnTxDj0P6r2",
-      "key_prefix": "ak_244ce9c7a",
+      "key_hash": "$2b$12$MfdD920/99bnDy5qxXCFCuguoGxdwQBBngtXpatrxoUeP.J7iFKYS",
+      "key_prefix": "ak_ab95efcdb",
       "user_id": "ceo",
       "description": "CEO Agent \u2014 Claude Opus 4.6 via Paperclip"
     },
     {
-      "key_hash": "$2b$12$oBM9zFS9y5N2KmEzr0CxsukqmrCygL1yHYf/yjUI27RSBoL5kZxtO",
-      "key_prefix": "ak_b152cf8b8",
+      "key_hash": "$2b$12$Ona39ojvfwKJlFzFVsk/K.vGh9ZKh3jRjhQWzQHMjUNnaAi.2mye2",
+      "key_prefix": "ak_2ecffb18b",
       "user_id": "research-agent",
-      "description": "Research Agent \u2014 MiniMax M2.7",
-      "rotated_at": "2026-04-07T22:14:59.032245"
+      "description": "Research Agent \u2014 MiniMax M2.7"
     },
     {
-      "key_hash": "$2b$12$GnPDC7lZ6ef9pR7qw4gO7uTqOncWvFif75k.0dKgHA1viek.Qsmb6",
-      "key_prefix": "ak_bd0bae796",
+      "key_hash": "$2b$12$Ln390gRoLirJ0bMZ/FjI0ul8hRApS45VvGCG6M8pePDWwVhbc8Ka6",
+      "key_prefix": "ak_6f7cb34e2",
       "user_id": "email-marketing-agent",
       "description": "Email Marketing Agent \u2014 MiniMax M2.7"
     }

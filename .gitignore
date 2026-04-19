@@ -6,3 +6,8 @@ node_modules/
 skills-lock.json
 *.txt
 skills-lock.json
+
+# Provisioning artefacts (contain raw API keys — never commit)
+provisioning-*.log
+agents-auth.json.bak.*
+.env
