@@ -198,8 +198,8 @@ hermes -p research-agent chat -q "Who are you?"
 
 ### New machine
 ```bash
-git clone https://github.com/sergiocoding96/hermes-deploy
-cd hermes-deploy && ./install.sh
+git clone https://github.com/sergiocoding96/hermes-multi-agent
+cd hermes-multi-agent/deploy && ./install.sh
 # Fill in API keys in ~/.hermes/.env
 ```
 
@@ -265,7 +265,8 @@ Both Firecrawl (Docker compose) and Camofox (@reboot cron) start automatically o
 
 | Repo | Purpose |
 |------|---------|
-| [sergiocoding96/hermes-deploy](https://github.com/sergiocoding96/hermes-deploy) (private) | Optimal Hermes config, profiles, plugins, scripts for deployment |
+| [sergiocoding96/hermes-multi-agent](https://github.com/sergiocoding96/hermes-multi-agent) | This repo — configs, skills, learnings. Install source lives in [`deploy/`](.) |
+| [sergiocoding96/MemOS](https://github.com/sergiocoding96/MemOS) | Patched MemOS fork — per-agent auth, ACL, search tuning (see [PATCHES.md](https://github.com/sergiocoding96/MemOS/blob/main/PATCHES.md)) |
 | [sergiocoding96/badass-skills](https://github.com/sergiocoding96/badass-skills) | Shared skills across all agents and machines |
 
 ## Setup Audit Score: 7.3 / 10
@@ -286,7 +287,7 @@ Skills (10), Browser/Camofox (10), Web Search (9), Memory (9), Compression (9), 
 2. ~~Fix Camofox crash + Brave credit burnout~~ ✅
 3. ~~Full 99-page docs audit + setup rating~~ ✅
 4. ~~Configure all optimizations (fallback, memory, vision, STT, etc.)~~ ✅
-5. ~~Create hermes-deploy repo~~ ✅
+5. ~~Consolidate deployment source into `deploy/`~~ ✅
 6. ~~Set up Open WebUI + Python library~~ ✅
 7. ~~Enable RL trajectory collection~~ ✅
 8. Finish MemOS provisioning + build native Hermes plugin
