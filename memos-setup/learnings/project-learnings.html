@@ -1,0 +1,2051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hermes Multi-Agent System — Project Learnings</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3350;
+    --accent: #6c63ff;
+    --accent2: #00d4aa;
+    --accent3: #ff6b6b;
+    --accent4: #ffd166;
+    --text: #e2e8f0;
+    --text-muted: #8892a4;
+    --text-dim: #5a6478;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+    --cyan: #22d3ee;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 10.5pt;
+    line-height: 1.65;
+  }
+
+  /* ── PAGE LAYOUT ── */
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
+    padding: 0;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  /* ── COVER ── */
+  .cover {
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 48pt 48pt;
+    min-height: 297mm;
+    position: relative;
+  }
+
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -80pt;
+    right: -80pt;
+    width: 320pt;
+    height: 320pt;
+    background: radial-gradient(circle, rgba(108,99,255,0.18) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .cover::after {
+    content: '';
+    position: absolute;
+    bottom: -60pt;
+    left: -60pt;
+    width: 280pt;
+    height: 280pt;
+    background: radial-gradient(circle, rgba(0,212,170,0.12) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .cover-badge {
+    background: rgba(108,99,255,0.15);
+    border: 1px solid rgba(108,99,255,0.4);
+    color: #a78bfa;
+    font-size: 8pt;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 5pt 12pt;
+    border-radius: 20pt;
+    margin-bottom: 28pt;
+    display: inline-block;
+  }
+
+  .cover h1 {
+    font-size: 38pt;
+    font-weight: 700;
+    line-height: 1.15;
+    color: #fff;
+    margin-bottom: 16pt;
+    max-width: 460pt;
+  }
+
+  .cover h1 span {
+    color: var(--accent);
+  }
+
+  .cover-subtitle {
+    font-size: 13pt;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-bottom: 40pt;
+    max-width: 420pt;
+    line-height: 1.6;
+  }
+
+  .cover-meta {
+    display: flex;
+    gap: 32pt;
+    margin-bottom: 48pt;
+  }
+
+  .cover-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4pt;
+  }
+
+  .cover-meta-label {
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+
+  .cover-meta-value {
+    font-size: 11pt;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .cover-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12pt;
+    width: 100%;
+    margin-top: auto;
+    position: relative;
+    z-index: 2;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10pt;
+    padding: 16pt;
+    text-align: center;
+  }
+
+  .stat-number {
+    font-size: 24pt;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 6pt;
+  }
+
+  .stat-label {
+    font-size: 8pt;
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── CONTENT PAGES ── */
+  .content-page {
+    background: var(--bg);
+    padding: 32pt 40pt;
+    min-height: 297mm;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24pt;
+    padding-bottom: 12pt;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .page-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12pt;
+  }
+
+  .session-dot {
+    width: 10pt;
+    height: 10pt;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .page-session-label {
+    font-size: 8pt;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+  }
+
+  .page-date {
+    font-size: 8pt;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── TOC ── */
+  .toc-page {
+    background: var(--bg);
+    padding: 40pt 48pt;
+    min-height: 297mm;
+  }
+
+  .toc-title {
+    font-size: 26pt;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8pt;
+  }
+
+  .toc-subtitle {
+    font-size: 11pt;
+    color: var(--text-muted);
+    margin-bottom: 36pt;
+  }
+
+  .toc-section {
+    margin-bottom: 28pt;
+  }
+
+  .toc-phase-label {
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    color: var(--text-dim);
+    margin-bottom: 10pt;
+  }
+
+  .toc-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 14pt;
+    padding: 10pt 14pt;
+    border-radius: 8pt;
+    margin-bottom: 6pt;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .toc-entry-dot {
+    width: 32pt;
+    height: 32pt;
+    border-radius: 8pt;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12pt;
+    flex-shrink: 0;
+  }
+
+  .toc-entry-content {
+    flex: 1;
+  }
+
+  .toc-entry-title {
+    font-size: 10.5pt;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2pt;
+  }
+
+  .toc-entry-desc {
+    font-size: 8.5pt;
+    color: var(--text-muted);
+  }
+
+  .toc-entry-date {
+    font-size: 8pt;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+    align-self: center;
+  }
+
+  /* ── SECTION HEADINGS ── */
+  .section-title-block {
+    margin-bottom: 20pt;
+  }
+
+  .section-eyebrow {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    color: var(--text-dim);
+    margin-bottom: 6pt;
+  }
+
+  .section-h1 {
+    font-size: 22pt;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 8pt;
+  }
+
+  .section-h2 {
+    font-size: 15pt;
+    font-weight: 700;
+    color: #fff;
+    margin-top: 20pt;
+    margin-bottom: 10pt;
+    padding-bottom: 6pt;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-h3 {
+    font-size: 11.5pt;
+    font-weight: 600;
+    color: var(--accent);
+    margin-top: 14pt;
+    margin-bottom: 6pt;
+  }
+
+  .section-lead {
+    font-size: 11pt;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin-bottom: 20pt;
+  }
+
+  /* ── COMPONENTS ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10pt;
+    padding: 16pt;
+    margin-bottom: 12pt;
+  }
+
+  .card-accent {
+    border-left: 3pt solid var(--accent);
+  }
+
+  .card-green {
+    border-left: 3pt solid var(--green);
+    background: rgba(74,222,128,0.04);
+  }
+
+  .card-red {
+    border-left: 3pt solid var(--red);
+    background: rgba(248,113,113,0.04);
+  }
+
+  .card-yellow {
+    border-left: 3pt solid var(--yellow);
+    background: rgba(251,191,36,0.04);
+  }
+
+  .card-purple {
+    border-left: 3pt solid var(--purple);
+    background: rgba(167,139,250,0.04);
+  }
+
+  .card-cyan {
+    border-left: 3pt solid var(--cyan);
+    background: rgba(34,211,238,0.04);
+  }
+
+  .card-title {
+    font-size: 10pt;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6pt;
+  }
+
+  .card-body {
+    font-size: 9pt;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* GRID */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12pt;
+    margin-bottom: 14pt;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10pt;
+    margin-bottom: 14pt;
+  }
+
+  /* TABLE */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14pt;
+    font-size: 8.5pt;
+  }
+
+  thead tr {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    padding: 8pt 10pt;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  td {
+    padding: 7pt 10pt;
+    border-bottom: 1px solid rgba(46,51,80,0.5);
+    color: var(--text);
+    vertical-align: top;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tbody tr:hover {
+    background: rgba(108,99,255,0.04);
+  }
+
+  /* CODE */
+  pre, code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 8pt;
+  }
+
+  .code-block {
+    background: #13151f;
+    border: 1px solid var(--border);
+    border-radius: 8pt;
+    padding: 12pt;
+    margin-bottom: 12pt;
+    overflow: hidden;
+  }
+
+  .code-block pre {
+    color: #a8d8a8;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .code-header {
+    font-size: 7.5pt;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8pt;
+    font-weight: 600;
+  }
+
+  /* BADGE / TAG */
+  .badge {
+    display: inline-block;
+    padding: 2pt 8pt;
+    border-radius: 12pt;
+    font-size: 7.5pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .badge-crit { background: rgba(248,113,113,0.15); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+  .badge-high { background: rgba(251,191,36,0.15); color: var(--yellow); border: 1px solid rgba(251,191,36,0.3); }
+  .badge-med { background: rgba(96,165,250,0.15); color: var(--blue); border: 1px solid rgba(96,165,250,0.3); }
+  .badge-low { background: rgba(74,222,128,0.15); color: var(--green); border: 1px solid rgba(74,222,128,0.3); }
+  .badge-fixed { background: rgba(74,222,128,0.12); color: var(--green); border: 1px solid rgba(74,222,128,0.25); }
+  .badge-done { background: rgba(108,99,255,0.12); color: var(--purple); border: 1px solid rgba(108,99,255,0.25); }
+  .badge-info { background: rgba(34,211,238,0.12); color: var(--cyan); border: 1px solid rgba(34,211,238,0.25); }
+
+  /* SCORE BAR */
+  .score-bar-wrap {
+    margin-bottom: 10pt;
+  }
+
+  .score-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9pt;
+    color: var(--text-muted);
+    margin-bottom: 5pt;
+  }
+
+  .score-bar-track {
+    background: var(--surface2);
+    border-radius: 4pt;
+    height: 8pt;
+    overflow: hidden;
+  }
+
+  .score-bar-fill {
+    height: 100%;
+    border-radius: 4pt;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
+  }
+
+  /* INSIGHT BOX */
+  .insight {
+    background: rgba(108,99,255,0.06);
+    border: 1px solid rgba(108,99,255,0.2);
+    border-radius: 8pt;
+    padding: 12pt 14pt;
+    margin-bottom: 12pt;
+  }
+
+  .insight-label {
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    margin-bottom: 4pt;
+  }
+
+  .insight p {
+    font-size: 9.5pt;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* ARCH DIAGRAM */
+  .arch-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8pt;
+    padding: 14pt;
+    margin-bottom: 12pt;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5pt;
+    color: #a8d8a8;
+    line-height: 1.65;
+    white-space: pre;
+  }
+
+  /* LISTS */
+  ul, ol {
+    padding-left: 16pt;
+    margin-bottom: 10pt;
+  }
+
+  li {
+    font-size: 9.5pt;
+    color: var(--text-muted);
+    margin-bottom: 4pt;
+    line-height: 1.55;
+  }
+
+  li strong {
+    color: var(--text);
+  }
+
+  /* SECTION DIVIDER */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 18pt 0;
+  }
+
+  /* CALLOUT */
+  .callout {
+    background: var(--surface);
+    border-radius: 8pt;
+    padding: 12pt 14pt;
+    margin-bottom: 12pt;
+    display: flex;
+    gap: 10pt;
+    align-items: flex-start;
+  }
+
+  .callout-icon {
+    font-size: 14pt;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .callout-body {
+    flex: 1;
+  }
+
+  .callout-title {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 3pt;
+  }
+
+  .callout-text {
+    font-size: 9pt;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  /* PROGRESS TRACKER */
+  .progress-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 14pt 0;
+  }
+
+  .progress-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10pt;
+    padding: 9pt 0;
+    border-bottom: 1px solid rgba(46,51,80,0.5);
+    font-size: 9.5pt;
+  }
+
+  .progress-item:last-child {
+    border-bottom: none;
+  }
+
+  .check-done { color: var(--green); font-size: 11pt; flex-shrink: 0; }
+  .check-todo { color: var(--text-dim); font-size: 11pt; flex-shrink: 0; }
+  .check-partial { color: var(--yellow); font-size: 11pt; flex-shrink: 0; }
+
+  .progress-text { color: var(--text); flex: 1; }
+  .progress-note { font-size: 8.5pt; color: var(--text-muted); display: block; margin-top: 2pt; }
+
+  /* FOOTER */
+  .page-footer {
+    margin-top: auto;
+    padding-top: 12pt;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.5pt;
+    color: var(--text-dim);
+  }
+
+  p {
+    font-size: 9.5pt;
+    color: var(--text-muted);
+    line-height: 1.65;
+    margin-bottom: 10pt;
+  }
+
+  strong { color: var(--text); }
+  em { color: var(--accent2); font-style: normal; font-weight: 500; }
+
+  .spacer { flex: 1; }
+
+  /* INLINE CODE */
+  code {
+    background: rgba(108,99,255,0.1);
+    border: 1px solid rgba(108,99,255,0.2);
+    padding: 1pt 4pt;
+    border-radius: 3pt;
+    font-size: 8pt;
+    color: #c4b5fd;
+  }
+
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  /* KEY-VALUE */
+  .kv-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 5pt 14pt;
+    margin-bottom: 12pt;
+  }
+
+  .kv-key {
+    font-size: 8.5pt;
+    font-weight: 600;
+    color: var(--text-dim);
+    white-space: nowrap;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .kv-val {
+    font-size: 8.5pt;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ COVER -->
+<div class="page">
+  <div class="cover">
+    <div class="cover-badge">Project Documentation · April 2026</div>
+    <h1>Hermes <span>Multi-Agent</span> System</h1>
+    <p class="cover-subtitle">Complete session learnings — from infrastructure build-out to security hardening, MemOS integration, and the path to a fully operational CEO→Worker orchestration loop.</p>
+
+    <div class="cover-meta">
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">Project Owner</span>
+        <span class="cover-meta-value">Sergio Palacio</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">Session Period</span>
+        <span class="cover-meta-value">Apr 6 – Apr 8, 2026</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">Total Sessions</span>
+        <span class="cover-meta-value">7 documented</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">Stack Status</span>
+        <span class="cover-meta-value">Infrastructure Live</span>
+      </div>
+    </div>
+
+    <div class="cover-stats">
+      <div class="stat-card">
+        <div class="stat-number">5→7.3</div>
+        <div class="stat-label">Hermes Config Score</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">2→9.5</div>
+        <div class="stat-label">MemOS Security Score</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">15</div>
+        <div class="stat-label">Vulns Found & Fixed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">17</div>
+        <div class="stat-label">Config Optimizations</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TOC -->
+<div class="page">
+  <div class="toc-page">
+    <div class="toc-title">Table of Contents</div>
+    <p class="toc-subtitle">Seven sessions across three days, building a production-grade multi-agent research system from scratch.</p>
+
+    <div class="toc-section">
+      <div class="toc-phase-label">Phase 1 · Infrastructure &amp; Optimization</div>
+
+      <div class="toc-entry">
+        <div class="toc-entry-dot" style="background:rgba(108,99,255,0.15);">🔧</div>
+        <div class="toc-entry-content">
+          <div class="toc-entry-title">Session 1 — Hermes Full Stack Optimization</div>
+          <div class="toc-entry-desc">SearXNG integration, Camofox fix, 34-area doc audit, 17 config changes, score 5.2→7.3/10</div>
+        </div>
+        <div class="toc-entry-date">Apr 6</div>
+      </div>
+
+      <div class="toc-entry">
+        <div class="toc-entry-dot" style="background:rgba(0,212,170,0.12);">🧠</div>
+        <div class="toc-entry-content">
+          <div class="toc-entry-title">Session 2 — MemOS: Infrastructure to Native Plugin</div>
+          <div class="toc-entry-desc">Search recall fix, cube isolation, per-agent auth, stress testing v1→v3, native memos_store/search plugin</div>
+        </div>
+        <div class="toc-entry-date">Apr 6–7</div>
+      </div>
+    </div>
+
+    <div class="toc-section">
+      <div class="toc-phase-label">Phase 2 · Security Hardening</div>
+
+      <div class="toc-entry">
+        <div class="toc-entry-dot" style="background:rgba(248,113,113,0.12);">🔒</div>
+        <div class="toc-entry-content">
+          <div class="toc-entry-title">Session 3 — Zero-Knowledge Security Audit</div>
+          <div class="toc-entry-desc">15 vulnerabilities found (score 2/10), infrastructure fixes applied, application-level auth hardened</div>
+        </div>
+        <div class="toc-entry-date">Apr 6–7</div>
+      </div>
+
+      <div class="toc-entry">
+        <div class="toc-entry-dot" style="background:rgba(251,191,36,0.12);">🛡️</div>
+        <div class="toc-entry-content">
+          <div class="toc-entry-title">Session 4 — Authorization, Admin API &amp; Secret Management</div>
+          <div class="toc-entry-desc">11 endpoints locked down, admin key API, age encryption for secrets, localhost binding</div>
+        </div>
+        <div class="toc-entry-date">Apr 7</div>
+      </div>
+
+      <div class="toc-entry">
+        <div class="toc-entry-dot" style="background:rgba(167,139,250,0.12);">🔑</div>
+        <div class="toc-entry-content">
+          <div class="toc-entry-title">Session 5 — Blind Audit &amp; Key Hardening</div>
+          <div class="toc-entry-desc">34 scripted subtests, bcrypt hashing, auth-failure rate limiting, auto-reload. Final score 9.5/10</div>
+        </div>
+        <div class="toc-entry-date">Apr 7</div>
+      </div>
+    </div>
+
+    <div class="toc-section">
+      <div class="toc-phase-label">Phase 3 · Operations &amp; Architecture Review</div>
+
+      <div class="toc-entry">
+        <div class="toc-entry-dot" style="background:rgba(34,211,238,0.12);">⚙️</div>
+        <div class="toc-entry-content">
+          <div class="toc-entry-title">Session 6 — Paperclip Recovery &amp; Local Deployment</div>
+          <div class="toc-entry-desc">Embedded postgres crash diagnosis, recovery runbook, CEO agent restored</div>
+        </div>
+        <div class="toc-entry-date">Apr 8</div>
+      </div>
+
+      <div class="toc-entry">
+        <div class="toc-entry-dot" style="background:rgba(74,222,128,0.12);">📋</div>
+        <div class="toc-entry-content">
+          <div class="toc-entry-title">Session 7 — Status Review &amp; Next Steps</div>
+          <div class="toc-entry-desc">Full health check of all services, integration gap analysis, priority order for completing the loop</div>
+        </div>
+        <div class="toc-entry-date">Apr 8</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Hermes Multi-Agent System · Project Learnings</span>
+      <span>April 2026</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SESSION 1 -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--accent);"></div>
+        <span class="page-session-label">Session 1 · Apr 6, 2026</span>
+      </div>
+      <span class="page-date">Full Stack Optimization</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Phase 1 · Infrastructure</div>
+      <div class="section-h1">Hermes Full Stack Optimization</div>
+      <p class="section-lead">A comprehensive audit of the entire Hermes agent setup triggered by Brave Search credit exhaustion. Expanded into a 99-page doc review, 34-area feature audit, and systematic optimization that raised the overall configuration score from <strong>5.2/10 to 7.3/10</strong>.</p>
+    </div>
+
+    <div class="section-h2">Critical Fixes</div>
+
+    <div class="grid-2">
+      <div class="card card-red">
+        <div class="card-title">Problem: Brave Search Exhausted</div>
+        <div class="card-body">$5/month limit hit in 6 days. <code>x-ratelimit-remaining: 0</code> with 24 days left in billing cycle. Every <code>web_search()</code> was burning paid credits.</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-title">Fix: SearXNG Meta-Search Engine</div>
+        <div class="card-body">Free, unlimited. Aggregates Google + Bing + DuckDuckGo + Startpage. Added as Docker service to Firecrawl compose. 40+ results/query vs Brave's 5–10.</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card card-red">
+        <div class="card-title">Problem: Camofox Crashing</div>
+        <div class="card-body"><code>better-sqlite3</code> compiled for wrong Node version. Node v25.8.2 (Linuxbrew) vs v22.22.1 (system). "Module did not self-register" on any tab creation.</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-title">Fix: Rebuild Native Module</div>
+        <div class="card-body"><code>npm rebuild better-sqlite3</code> in hermes-agent dir. Restart via correct binary. Created systemd service + @reboot cron for persistence.</div>
+      </div>
+    </div>
+
+    <div class="section-h2">Documentation Audit Results</div>
+
+    <p>Scraped all 99 pages from hermes-agent docs using Firecrawl parallel batch. Cross-referenced every feature against actual config:</p>
+
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-title" style="color:var(--red);">14 Areas — Score 0–2</div>
+        <div class="card-body">Broken/completely unused. Including corrupted API keys, fake placeholders, zero hooks, no MCP, no webhooks.</div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--yellow);">Corrupted Keys Found</div>
+        <div class="card-body"><code>OPENROUTER_API_KEY=^[[B</code> (terminal escape char). <code>FAL_KEY=efefeefef</code> (placeholder). Both removed.</div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--green);">Strengths Identified</div>
+        <div class="card-body">Skills framework (90+), Camofox browser working, cron jobs active. Strong foundation to build on.</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 1 · Hermes Full Stack Optimization</span>
+      <span>3 of 16</span>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--accent);"></div>
+        <span class="page-session-label">Session 1 (continued)</span>
+      </div>
+      <span class="page-date">17 Config Changes</span>
+    </div>
+
+    <div class="section-h2">17 Configuration Optimizations</div>
+
+    <table>
+      <thead>
+        <tr><th>Setting</th><th>Before</th><th>After</th><th>Rationale</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>web.backend</code></td><td>brave</td><td>firecrawl</td><td>Free unlimited via SearXNG</td></tr>
+        <tr><td><code>fallback_providers</code></td><td>empty</td><td>deepseek-chat</td><td>Auto-failover on MiniMax errors</td></tr>
+        <tr><td><code>memory.provider</code></td><td>empty</td><td>holographic</td><td>Trust scoring, entity graph, contradiction detection</td></tr>
+        <tr><td><code>terminal.timeout</code></td><td>60s</td><td>600s</td><td>Long research tasks were timing out</td></tr>
+        <tr><td><code>delegation.max_iterations</code></td><td>50</td><td>90</td><td>Match main agent turns for deep research</td></tr>
+        <tr><td><code>delegation.default_toolsets</code></td><td>terminal,file,web</td><td>+skills</td><td>Subagents can now load skills</td></tr>
+        <tr><td><code>auxiliary.vision</code></td><td>empty</td><td>gemini-2.5-flash</td><td>MiniMax M2.7 has no vision support</td></tr>
+        <tr><td><code>compression.summary_model</code></td><td>gemini-3-flash</td><td>MiniMax-M2.7</td><td>Eliminate external Google dependency</td></tr>
+        <tr><td><code>browser.camofox.managed_persistence</code></td><td>false</td><td>true</td><td>Keep cookies across sessions</td></tr>
+        <tr><td><code>browser.allow_private_urls</code></td><td>false</td><td>true</td><td>Agents can browse localhost</td></tr>
+        <tr><td><code>privacy.redact_pii</code></td><td>false</td><td>true</td><td>Scrub personal data before API</td></tr>
+        <tr><td><code>timezone</code></td><td>empty</td><td>Europe/Madrid</td><td>Correct cron scheduling</td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-h2">New Infrastructure Deployed</div>
+
+    <div class="grid-2">
+      <div class="card card-accent">
+        <div class="card-title">Open WebUI + API Server</div>
+        <div class="card-body">Docker on port 3001, connected to Hermes OpenAI-compatible API at port 8642. Enables browser-based access to all agents.</div>
+      </div>
+      <div class="card card-accent">
+        <div class="card-title">hermes_lib.py</div>
+        <div class="card-body">Python wrapper: <code>hermes_chat()</code>, <code>hermes_research()</code>, <code>hermes_email()</code>, <code>dispatch_to_hermes()</code>, <code>hermes_api_chat()</code></div>
+      </div>
+      <div class="card card-purple">
+        <div class="card-title">3 New Cron Jobs</div>
+        <div class="card-body">Daily health audit (7AM), weekly session cleanup (Sun 3AM), nightly trajectory export for RL training data (3:30AM)</div>
+      </div>
+      <div class="card card-purple">
+        <div class="card-title">quality-monitor Plugin</div>
+        <div class="card-body">Hooks into <code>post_tool_call</code>. Logs all tool calls to <code>activity.jsonl</code>, captures quality scores to <code>quality.jsonl</code>.</div>
+      </div>
+    </div>
+
+    <div class="section-h2">Score Progression</div>
+
+    <div class="score-bar-wrap">
+      <div class="score-bar-label"><span>Session Start</span><span>5.2/10</span></div>
+      <div class="score-bar-track"><div class="score-bar-fill" style="width:52%;"></div></div>
+    </div>
+    <div class="score-bar-wrap">
+      <div class="score-bar-label"><span>After Optimization</span><span>7.3/10</span></div>
+      <div class="score-bar-track"><div class="score-bar-fill" style="width:73%;background:linear-gradient(90deg,var(--green),var(--accent2));"></div></div>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">Key Learning</div>
+      <p>Hermes has far more features than most users configure. The 99-page docs reveal 7 memory providers, 14 messaging platforms, webhook routes, RL training, batch processing, Python library mode, and an OpenAI-compatible API server — most completely unused in a default setup.</p>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 1 · Hermes Full Stack Optimization</span>
+      <span>4 of 16</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SESSION 2 -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--accent2);"></div>
+        <span class="page-session-label">Session 2 · Apr 6–7, 2026</span>
+      </div>
+      <span class="page-date">MemOS: Infrastructure to Native Plugin</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Phase 1 · Memory Integration</div>
+      <div class="section-h1">MemOS: From Testing to Production</div>
+      <p class="section-lead">Continued from Session 1's MemOS infrastructure build. Focused on stress testing the search pipeline, enforcing real cube isolation, building per-agent auth, and replacing curl-based memory calls with a native Hermes plugin.</p>
+    </div>
+
+    <div class="section-h2">Search Recall Fix (1/12 → 5+ results)</div>
+
+    <p>Four compounding filters in the search pipeline were too aggressive. A vague query scored 0.10–0.25 similarity but got filtered at the 0.20 threshold before reaching any results.</p>
+
+    <table>
+      <thead>
+        <tr><th>Parameter</th><th>File</th><th>Before</th><th>After</th><th>Env Var</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Relativity default</td><td><code>product_models.py</code></td><td>0.20</td><td>0.05</td><td>—</td></tr>
+        <tr><td>Top-K expansion</td><td><code>search_handler.py</code></td><td>3x hardcoded</td><td>5x</td><td><code>MOS_SEARCH_TOP_K_FACTOR</code></td></tr>
+        <tr><td>Text similarity</td><td><code>search_handler.py</code></td><td>0.92</td><td>0.85</td><td><code>MOS_MMR_TEXT_THRESHOLD</code></td></tr>
+        <tr><td>Penalty start</td><td><code>search_handler.py</code></td><td>0.90</td><td>0.70</td><td><code>MOS_MMR_PENALTY_THRESHOLD</code></td></tr>
+      </tbody>
+    </table>
+
+    <div class="insight">
+      <div class="insight-label">Key Learning</div>
+      <p>Making search parameters env-configurable means quality tuning without code changes. Always make thresholds configurable when they affect retrieval quality.</p>
+    </div>
+
+    <div class="section-h2">Cube Isolation Fix (3/10 → 10/10)</div>
+
+    <div class="grid-2">
+      <div class="card card-red">
+        <div class="card-title">Root Cause</div>
+        <div class="card-body"><code>UserManager.validate_user_cube_access()</code> existed but was never called. Any user could read/write any cube by passing its ID. Trust-based only, no enforcement.</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-title">Fix Applied</div>
+        <div class="card-body">Permission check added at the top of <code>SearchHandler</code> and <code>AddHandler</code> before any cube view is constructed. <code>UserManager</code> injected into <code>HandlerDependencies</code>.</div>
+      </div>
+    </div>
+
+    <div class="section-h2">Per-Agent API Key Authentication</div>
+
+    <p>Keys stored in <code>agents-auth.json</code> (ships with git repo). <code>AgentAuthMiddleware</code> validates <code>Authorization: Bearer ak_...</code> headers. Authenticated <code>user_id</code> stored in a <code>ContextVar</code>.</p>
+
+    <div class="card card-yellow">
+      <div class="card-title">Key Insight: Trust vs Real Auth</div>
+      <div class="card-body">With <code>MEMOS_AUTH_REQUIRED=false</code>, cube isolation only works if callers honestly identify themselves. Anyone can claim <code>user_id: "ceo"</code> and read everything. Setting auth to <code>true</code> closes this gap entirely. Auth middleware was built but disabled.</div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 2 · MemOS Infrastructure to Plugin</span>
+      <span>5 of 16</span>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--accent2);"></div>
+        <span class="page-session-label">Session 2 (continued)</span>
+      </div>
+      <span class="page-date">Stress Testing &amp; Native Plugin</span>
+    </div>
+
+    <div class="section-h2">Stress Test Evolution</div>
+
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-title" style="color:var(--red);">v1 — Confirmation Bias</div>
+        <div class="card-body">9/9 passed against dirty state with 50+ pre-existing memories. Test 6 was rewritten to hide failures. Only 2 endpoints tested. <strong>False confidence.</strong></div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--yellow);">v2 — Adversarial + Clean</div>
+        <div class="card-body">12 tests with fresh users/cubes per run, teardown after. Found soft-delete collision bug (UNIQUE constraint on cube create after teardown).</div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--green);">v3 — Zero-Knowledge Audit</div>
+        <div class="card-body">Fresh session, zero context: "there's an API on port 8001, find everything wrong." Result: 2/10. Found 15 vulnerabilities completely missed by the builder.</div>
+      </div>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">Critical Learning</div>
+      <p><strong>Never test your own security code.</strong> The same reasoning patterns that built the system blind you to its gaps. Zero-knowledge auditing by a fresh session with no hints is the only reliable method. This became a repeatable practice.</p>
+    </div>
+
+    <div class="section-h2">Native Tool Plugin: memos_store + memos_search</div>
+
+    <p>Agents were using curl commands from SKILL.md files. This leaked API keys into LLM context, wasted ~200 tokens per call, and was error-prone with malformed JSON.</p>
+
+    <div class="grid-2">
+      <div class="card card-cyan">
+        <div class="card-title">Plugin: ~/.hermes/plugins/memos-toolset/</div>
+        <div class="card-body">
+          <code>plugin.yaml</code> — manifest, requires MEMOS_API_KEY, MEMOS_USER_ID, MEMOS_CUBE_ID<br>
+          <code>schemas.py</code> — minimal tool schemas (agent sees content/query only)<br>
+          <code>handlers.py</code> — HTTP calls with identity injected from env vars<br>
+          <code>__init__.py</code> — registers tools via ctx.register_tool()
+        </div>
+      </div>
+      <div class="card card-cyan">
+        <div class="card-title">Key Design Decisions</div>
+        <div class="card-body">
+          ✓ <strong>Identity from env, not LLM</strong> — agent never sees credentials<br>
+          ✓ <strong>Per-profile .env</strong> — each profile loads its own MEMOS vars<br>
+          ✓ <strong>No delete tool</strong> — LLMs shouldn't destroy memories<br>
+          ✓ <strong>LLM-formatted results</strong> — numbered list with rank + relevance
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-body">
+        <div class="callout-title">MiniMax Key Bug Found</div>
+        <div class="callout-text">Profile .env files replace the global ~/.hermes/.env entirely. If a profile .env only has MEMOS vars, the MiniMax key is lost → 401. Fix: include MINIMAX_API_KEY and DEEPSEEK_API_KEY in every profile's .env.</div>
+      </div>
+    </div>
+
+    <div class="section-h2">End-of-Session Architecture</div>
+
+    <div class="arch-box">Agent (MiniMax M2.7)
+  calls memos_store() / memos_search()
+  ↓ (plugin injects user_id, cube_id, Bearer key)
+MemOS API (localhost:8001)
+  AgentAuthMiddleware → validates Bearer key
+  Router Depends(_require_auth) → 401 if no key
+  Handler spoof check → 403 if key != user_id
+  Handler cube check → 403 if user can't access cube
+MEMRADER (DeepSeek V3) → extracts structured memories
+Embedder (local MiniLM) → 384-dim vectors
+Neo4j (127.0.0.1:7687) · Qdrant (127.0.0.1:6333) · SQLite</div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 2 · MemOS Infrastructure to Plugin</span>
+      <span>6 of 16</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SESSION 3 -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--red);"></div>
+        <span class="page-session-label">Session 3 · Apr 6–7, 2026</span>
+      </div>
+      <span class="page-date">Zero-Knowledge Security Audit</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Phase 2 · Security</div>
+      <div class="section-h1">Zero-Knowledge Security Audit</div>
+      <p class="section-lead">An independent blind audit against MemOS API v1.0.1 found <strong>15 vulnerabilities</strong> and scored the system <strong>2/10</strong> for production readiness. All 15 were resolved across sessions 3–5, bringing the score to ~9.5/10.</p>
+    </div>
+
+    <div class="section-h2">Initial Audit Findings (Score: 2/10)</div>
+
+    <table>
+      <thead>
+        <tr><th>Severity</th><th>Finding</th><th>Impact</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="badge badge-crit">CRIT</span></td>
+          <td>Qdrant open on 0.0.0.0, no API key</td>
+          <td>Anyone could read/delete all vectors across all agents</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-crit">CRIT</span></td>
+          <td>Neo4j with default password (neo4j/12345678)</td>
+          <td>425 nodes across 12 cubes fully accessible over network</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-crit">CRIT</span></td>
+          <td>delete/recover endpoints — zero auth</td>
+          <td>Any caller could delete any agent's memories</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-crit">CRIT</span></td>
+          <td>Root-owned uvicorn on port 8000</td>
+          <td>Same codebase running as root, exploitable RCE surface</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-high">HIGH</span></td>
+          <td>All 9 services bound to 0.0.0.0</td>
+          <td>Accessible from the entire local network</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-high">HIGH</span></td>
+          <td>MEMOS_AUTH_REQUIRED=false</td>
+          <td>Auth middleware was a complete no-op, silent passthrough</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-high">HIGH</span></td>
+          <td>Bearer tokens in application logs</td>
+          <td>Full API keys written to log files in plaintext</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-med">MED</span></td>
+          <td>Data stored in /tmp/memos_data</td>
+          <td>Memory wiped on every system reboot</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-med">MED</span></td>
+          <td>Firecrawl/SearXNG exposed on 0.0.0.0</td>
+          <td>Web scraping infrastructure accessible from network</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-h2">Infrastructure Fixes Applied</div>
+
+    <div class="grid-2">
+      <div>
+        <div class="card card-green" style="margin-bottom:8pt;">
+          <div class="card-title">Qdrant</div>
+          <div class="card-body">API key set (<code>qk_7cbb...</code>), bound to 127.0.0.1. Added SSL=false fix for host+port mode in <code>qdrant.py</code>.</div>
+        </div>
+        <div class="card card-green" style="margin-bottom:8pt;">
+          <div class="card-title">Neo4j</div>
+          <div class="card-body">Password changed from default. Bound to 127.0.0.1:7687 and 127.0.0.1:7474.</div>
+        </div>
+        <div class="card card-green">
+          <div class="card-title">Root Process</div>
+          <div class="card-body">Port 8000 container stopped and removed. UFW rule added to block the port.</div>
+        </div>
+      </div>
+      <div>
+        <div class="card card-green" style="margin-bottom:8pt;">
+          <div class="card-title">Auth Enforcement</div>
+          <div class="card-body"><code>MEMOS_AUTH_REQUIRED=true</code> — middleware now actively validates every request.</div>
+        </div>
+        <div class="card card-green" style="margin-bottom:8pt;">
+          <div class="card-title">Log Sanitization</div>
+          <div class="card-body">Authorization and cookie headers stripped from <code>request_context.py</code>. Full request body replaced with summary in <code>add_handler.py</code>.</div>
+        </div>
+        <div class="card card-green">
+          <div class="card-title">Data Path</div>
+          <div class="card-body">Moved from <code>/tmp/memos_data</code> to <code>~/.memos/data</code> — persistent across reboots.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 3 · Zero-Knowledge Security Audit</span>
+      <span>7 of 16</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SESSION 4 -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--yellow);"></div>
+        <span class="page-session-label">Session 4 · Apr 7, 2026</span>
+      </div>
+      <span class="page-date">Authorization, Admin API &amp; Secrets</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Phase 2 · Security Hardening</div>
+      <div class="section-h1">Authorization, Admin API &amp; Secret Management</div>
+      <p class="section-lead">Infrastructure was locked down. This session closed the remaining 8 application-level gaps: endpoint-level authorization for all routes, a working admin key management API, age-encrypted secrets, and full localhost binding.</p>
+    </div>
+
+    <div class="section-h2">The Auth vs Authorization Distinction</div>
+
+    <div class="callout">
+      <div class="callout-icon">🔑</div>
+      <div class="callout-body">
+        <div class="callout-title">Auth gate ≠ Authorization</div>
+        <div class="callout-text">MEMOS_AUTH_REQUIRED=true only proves the caller has a valid key. It does NOT check which cubes they can access. Any authenticated agent could still read, write, or delete any other agent's data through ~10 unprotected endpoints.</div>
+      </div>
+    </div>
+
+    <div class="section-h2">11 Endpoints Locked Down</div>
+
+    <p>Created <code>_enforce_cube_access()</code> helper in <code>server_router.py</code> — checks spoof detection + cube ACL. Applied to every previously unprotected route:</p>
+
+    <div class="grid-2">
+      <div>
+        <table>
+          <thead><tr><th>Endpoint</th><th>Access Type</th></tr></thead>
+          <tbody>
+            <tr><td><code>get_all</code></td><td>Read + cube check</td></tr>
+            <tr><td><code>get_memory</code></td><td>Read + cube check</td></tr>
+            <tr><td><code>get_memory/{id}</code></td><td>Owner lookup via graph</td></tr>
+            <tr><td><code>get_memory_by_ids</code></td><td>Batch owner lookup</td></tr>
+            <tr><td><code>get_memory_dashboard</code></td><td>Read + cube check</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <table>
+          <thead><tr><th>Endpoint</th><th>Access Type</th></tr></thead>
+          <tbody>
+            <tr><td><code>delete_memory</code></td><td>Write ACL check</td></tr>
+            <tr><td><code>delete_memory_by_record_id</code></td><td>Spoof + cube check</td></tr>
+            <tr><td><code>recover_memory_by_record_id</code></td><td>Spoof + cube check</td></tr>
+            <tr><td><code>feedback</code></td><td>Write cube check</td></tr>
+            <tr><td><code>exist_mem_cube_id</code></td><td>Hides inaccessible cubes</td></tr>
+            <tr><td><code>get_user_names_by_memory_ids</code></td><td>Filters to accessible cubes</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card card-yellow">
+      <div class="card-title">Critical Fix: Cube ID Mismatch</div>
+      <div class="card-body">Agents address cubes by <code>user_id</code> (e.g., "ceo"), but UserManager DB stores them as <code>cube_id</code> (e.g., "ceo-cube"). The original method only matched on <code>cube_id</code>, so every access check returned False. Fixed: method now resolves cubes by trying <code>cube_id → cube_name → owner_id</code> in sequence.</div>
+    </div>
+
+    <div class="section-h2">Admin API + Secret Management</div>
+
+    <div class="grid-2">
+      <div class="card card-purple">
+        <div class="card-title">Admin Key Management API</div>
+        <div class="card-body">
+          Rewrote dead-code <code>admin_router.py</code>:<br>
+          <code>GET /admin/keys</code> — list (prefixes only)<br>
+          <code>POST /admin/keys</code> — create (bcrypt hashed)<br>
+          <code>DELETE /admin/keys</code> — revoke<br>
+          <code>POST /admin/keys/rotate</code> — rotate, old key dies immediately<br><br>
+          Protected by separate <code>MEMOS_ADMIN_KEY</code> env var.
+        </div>
+      </div>
+      <div class="card card-purple">
+        <div class="card-title">Age Encryption for Secrets</div>
+        <div class="card-body">
+          Moved 5 secrets out of plaintext .env:<br>
+          <code>MINIMAX_API_KEY</code>, <code>MEMRADER_API_KEY</code>,<br>
+          <code>NEO4J_PASSWORD</code>, <code>QDRANT_API_KEY</code>, <code>MEMOS_ADMIN_KEY</code><br><br>
+          Keypair at <code>~/.memos/keys/memos.key</code> (mode 600).<br>
+          <code>start-memos.sh</code> decrypts at boot, execs server.
+        </div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 4 · Authorization, Admin API &amp; Secrets</span>
+      <span>8 of 16</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SESSION 5 -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--purple);"></div>
+        <span class="page-session-label">Session 5 · Apr 7, 2026</span>
+      </div>
+      <span class="page-date">Blind Audit &amp; Key Hardening</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Phase 2 · Security Hardening</div>
+      <div class="section-h1">Blind Audit &amp; Key Hardening</div>
+      <p class="section-lead">Structured 34-subtest blind audit against the now-hardened MemOS. Found 3 remaining issues: plaintext key storage, no rate limiting on auth failures, and static key registry. All fixed. Final score: <strong>9.5/10</strong>.</p>
+    </div>
+
+    <div class="section-h2">Audit Results by Category</div>
+
+    <div class="grid-2">
+      <div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Authentication (10 subtests)</span><span>8/10</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:80%;"></div></div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Cube Isolation (9 subtests)</span><span>10/10</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:100%;background:var(--green);"></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Memory Quality (6 subtests)</span><span>10/10</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:100%;background:var(--green);"></div></div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Edge Cases (9 subtests)</span><span>10/10</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:100%;background:var(--green);"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-h2">Three Fixes Applied</div>
+
+    <div class="grid-3">
+      <div class="card card-green">
+        <div class="card-title">1 · Bcrypt Key Hashing</div>
+        <div class="card-body">agents-auth.json upgraded to v2 format. Raw keys printed once at provisioning, never stored. <code>bcrypt.checkpw()</code> validates incoming keys. Backward-compatible v1 support retained.</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-title">2 · Auth Failure Rate Limiting</div>
+        <div class="card-body">In-memory sliding window per IP. 10 failures/60s → 429. Rate limit checked AFTER auth attempt — valid key from limited IP still succeeds and clears the counter.</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-title">3 · Auto-Reload Key Registry</div>
+        <div class="card-body"><code>_check_reload()</code> compares mtime on every request (~0.01ms). Key rotation, adding agents, revocation — all without server restart.</div>
+      </div>
+    </div>
+
+    <div class="section-h2">Positive Findings (Known-Good Behaviors)</div>
+
+    <table>
+      <thead>
+        <tr><th>Test</th><th>Result</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Spoof protection (key A + user_id B)</td><td><span class="badge badge-fixed">403 + clear error</span></td></tr>
+        <tr><td>Cube isolation (cross-agent read/write)</td><td><span class="badge badge-fixed">DB-enforced SQLite ACL</span></td></tr>
+        <tr><td>SQL injection in user_id field</td><td><span class="badge badge-fixed">SQLAlchemy ORM parameterization</span></td></tr>
+        <tr><td>Write-time dedup (5 identical writes)</td><td><span class="badge badge-fixed">1 stored (0.90 cosine threshold)</span></td></tr>
+        <tr><td>Memory extraction granularity</td><td><span class="badge badge-fixed">7 findings → 15 memories</span></td></tr>
+        <tr><td>Language isolation (no Chinese leakage)</td><td><span class="badge badge-fixed">English input → English output</span></td></tr>
+        <tr><td>Concurrent writes (two agents simultaneous)</td><td><span class="badge badge-fixed">No race, no cross-contamination</span></td></tr>
+        <tr><td>Deprecated mem_cube_id field bypass attempt</td><td><span class="badge badge-fixed">Pydantic validator catches it</span></td></tr>
+      </tbody>
+    </table>
+
+    <div class="insight">
+      <div class="insight-label">Important Gotcha: Bcrypt Rate Limiting Order</div>
+      <p>The initial implementation checked rate limit BEFORE auth — this locked out legitimate users when an attacker triggered the limit from the same IP. Fix: attempt auth first. If successful, clear the failure counter. Only return 429 if auth also fails.</p>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 5 · Blind Audit &amp; Key Hardening</span>
+      <span>9 of 16</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SESSION 6 -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--cyan);"></div>
+        <span class="page-session-label">Session 6 · Apr 8, 2026</span>
+      </div>
+      <span class="page-date">Paperclip Recovery</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Phase 3 · Operations</div>
+      <div class="section-h1">Paperclip Local Deployment &amp; Recovery</div>
+      <p class="section-lead">Paperclip (CEO agent UI, Claude Opus 4.6) was unresponsive. The node process was alive but the embedded PostgreSQL subprocess had crashed. Diagnosed and recovered in one session.</p>
+    </div>
+
+    <div class="section-h2">Root Cause</div>
+
+    <div class="card card-red">
+      <div class="card-title">Symptom: ECONNREFUSED 127.0.0.1:54329</div>
+      <div class="card-body">Port 54329 is Paperclip's embedded PostgreSQL (<code>@embedded-postgres/linux-x64</code>). The DB subprocess had died (likely a system restart or OOM), but the node process kept running — alive but unable to serve any requests. Logs showed the error flooding every heartbeat tick.</div>
+    </div>
+
+    <div class="section-h2">Recovery Runbook</div>
+
+    <div class="code-block">
+      <div class="code-header">Recovery Commands</div>
+      <pre># 1. Kill the orphaned node process
+kill $(ps aux | grep "paperclipai run" | grep -v grep | awk '{print $2}')
+
+# 2. Restart with correct env (embedded postgres auto-starts)
+source /home/openclaw/.paperclip/instances/default/.env
+export PAPERCLIP_AGENT_JWT_SECRET
+nohup paperclipai run > ~/.paperclip/instances/default/logs/server.log 2>&1 &
+
+# 3. Wait ~8s, then verify
+curl http://localhost:3100/api/health
+# {"status":"ok","version":"2026.325.0","deploymentMode":"authenticated","bootstrapStatus":"ready"}</pre>
+    </div>
+
+    <div class="section-h2">Key Facts Reference</div>
+
+    <table>
+      <thead>
+        <tr><th>Item</th><th>Location / Value</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Binary</td><td><code>/home/linuxbrew/.linuxbrew/bin/paperclipai</code></td></tr>
+        <tr><td>Embedded postgres binary</td><td><code>~/.../node_modules/@embedded-postgres/linux-x64/native/bin/postgres</code></td></tr>
+        <tr><td>Embedded postgres port</td><td><code>54329</code></td></tr>
+        <tr><td>DB data dir</td><td><code>~/.paperclip/instances/default/db/</code></td></tr>
+        <tr><td>Log file</td><td><code>~/.paperclip/instances/default/logs/server.log</code></td></tr>
+        <tr><td>Env file</td><td><code>~/.paperclip/instances/default/.env</code> (contains JWT secret)</td></tr>
+        <tr><td>HTTP endpoint</td><td><code>http://localhost:3100</code> (also via Tailscale)</td></tr>
+        <tr><td>Version</td><td><code>2026.325.0</code></td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-h2">Diagnosis Checklist</div>
+
+    <ul class="progress-list" style="list-style:none;padding:0;">
+      <li class="progress-item">
+        <span class="check-done">①</span>
+        <div class="progress-text">Is the node process running?
+          <span class="progress-note"><code>ps aux | grep paperclipai</code></span>
+        </div>
+      </li>
+      <li class="progress-item">
+        <span class="check-done">②</span>
+        <div class="progress-text">Is postgres running?
+          <span class="progress-note"><code>ss -tlnp | grep 54329</code></span>
+        </div>
+      </li>
+      <li class="progress-item">
+        <span class="check-done">③</span>
+        <div class="progress-text">Check logs
+          <span class="progress-note"><code>tail -50 ~/.paperclip/instances/default/logs/server.log</code></span>
+        </div>
+      </li>
+      <li class="progress-item">
+        <span class="check-done">④</span>
+        <div class="progress-text">If ECONNREFUSED on 54329 → kill node process, restart with env sourced</div>
+      </li>
+      <li class="progress-item">
+        <span class="check-done">⑤</span>
+        <div class="progress-text">If node process missing → just start fresh with the nohup command</div>
+      </li>
+    </ul>
+
+    <div class="insight">
+      <div class="insight-label">Note for Next Sessions</div>
+      <p>Paperclip (CEO agent) is now live at localhost:3100. The <strong>hermes-paperclip-adapter is still NOT installed</strong> — this is the critical missing link before CEO can spawn Hermes workers. The full orchestration loop is not yet wired.</p>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 6 · Paperclip Recovery</span>
+      <span>10 of 16</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SESSION 7 -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--green);"></div>
+        <span class="page-session-label">Session 7 · Apr 8, 2026</span>
+      </div>
+      <span class="page-date">Status Review &amp; Next Steps</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Phase 3 · Architecture Review</div>
+      <div class="section-h1">Status Review &amp; Integration Gaps</div>
+      <p class="section-lead">Full health check of all services confirmed the infrastructure stack is live and healthy. No code was written. The session mapped exactly what's built, what's connected, and what the 5 remaining gaps are before the system is end-to-end operational.</p>
+    </div>
+
+    <div class="section-h2">Service Health Status</div>
+
+    <table>
+      <thead>
+        <tr><th>Service</th><th>Endpoint</th><th>Status</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>MemOS</strong></td>
+          <td><code>localhost:8001</code></td>
+          <td><span class="badge badge-fixed">Healthy</span></td>
+          <td>v1.0.1, auth enforced, cubes isolated</td>
+        </tr>
+        <tr>
+          <td><strong>Firecrawl</strong></td>
+          <td><code>localhost:3002</code></td>
+          <td><span class="badge badge-fixed">Live</span></td>
+          <td>Search working, Playwright scraping active</td>
+        </tr>
+        <tr>
+          <td><strong>SearXNG</strong></td>
+          <td><code>localhost:8888</code></td>
+          <td><span class="badge badge-fixed">Live</span></td>
+          <td>61 results on test query</td>
+        </tr>
+        <tr>
+          <td><strong>Camofox</strong></td>
+          <td><code>localhost:9377</code></td>
+          <td><span class="badge badge-fixed">Live</span></td>
+          <td>Browser connected, localhost-bound</td>
+        </tr>
+        <tr>
+          <td><strong>Paperclip</strong></td>
+          <td><code>localhost:3100</code></td>
+          <td><span class="badge badge-fixed">Live</span></td>
+          <td>CEO Claude Opus 4.6 ready</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-h2">What Is Built</div>
+
+    <div class="grid-2">
+      <div class="card card-accent">
+        <div class="card-title">13 Research Skills</div>
+        <div class="card-body">research-coordinator, social-media-researcher, code-researcher, academic-researcher, market-intelligence-researcher, hn-research, deep-research, arxiv, reddit-research, github-research, polymarket, blogwatcher, autoresearch</div>
+      </div>
+      <div class="card card-accent">
+        <div class="card-title">Security Infrastructure</div>
+        <div class="card-body">Per-agent API keys in agents-auth.json, bcrypt hashing, rate limiting, cube isolation, admin API, age-encrypted secrets, localhost binding on all services</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Tooling &amp; Scripts</div>
+        <div class="card-body"><code>setup-memos-agents.py</code> — provisioning<br><code>setup-web-stack.sh</code> — bootstrap<br><code>hermes_lib.py</code> — Python library<br>6-part blind audit suite in <code>tests/</code></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Monitoring</div>
+        <div class="card-body"><code>quality-monitor</code> plugin — logs all tool calls, captures quality scores. 3 cron jobs: health audit, session cleanup, trajectory export.</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 7 · Status Review &amp; Next Steps</span>
+      <span>11 of 16</span>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--green);"></div>
+        <span class="page-session-label">Session 7 (continued)</span>
+      </div>
+      <span class="page-date">Integration Gaps &amp; Architecture</span>
+    </div>
+
+    <div class="section-h2">5 Integration Gaps (in priority order)</div>
+
+    <ul class="progress-list" style="list-style:none;padding:0;">
+      <li class="progress-item">
+        <span class="check-todo">①</span>
+        <div class="progress-text"><strong>Run MemOS provisioning</strong>
+          <span class="progress-note">setup-memos-agents.py exists but cubes not created yet. MemOS is live — just needs the script run.</span>
+        </div>
+        <span class="badge badge-high" style="align-self:center;white-space:nowrap;">Priority 1</span>
+      </li>
+      <li class="progress-item">
+        <span class="check-todo">②</span>
+        <div class="progress-text"><strong>Install hermes-paperclip-adapter</strong>
+          <span class="progress-note">Critical missing link. Without it, CEO Claude Opus cannot spawn Hermes MiniMax workers. This is the core orchestration connector.</span>
+        </div>
+        <span class="badge badge-high" style="align-self:center;white-space:nowrap;">Priority 2</span>
+      </li>
+      <li class="progress-item">
+        <span class="check-todo">③</span>
+        <div class="progress-text"><strong>Add MemOS dual-write to research-coordinator</strong>
+          <span class="progress-note">Research output is not persisted to MemOS after skill runs. Memory does not compound. Agents forget everything.</span>
+        </div>
+        <span class="badge badge-med" style="align-self:center;white-space:nowrap;">Priority 3</span>
+      </li>
+      <li class="progress-item">
+        <span class="check-todo">④</span>
+        <div class="progress-text"><strong>Wire soft feedback loop</strong>
+          <span class="progress-note">CEO HEARTBEAT reads user feedback → patches skills. The feedback mechanism is designed but not connected.</span>
+        </div>
+        <span class="badge badge-med" style="align-self:center;white-space:nowrap;">Priority 4</span>
+      </li>
+      <li class="progress-item">
+        <span class="check-todo">⑤</span>
+        <div class="progress-text"><strong>Implement hard autoresearch loop</strong>
+          <span class="progress-note">quality_score &lt; 0.7 → auto-patch → re-run → keep if improved, revert if not. Karpathy-style metric-gated self-improvement.</span>
+        </div>
+        <span class="badge badge-low" style="align-self:center;white-space:nowrap;">Priority 5</span>
+      </li>
+    </ul>
+
+    <div class="section-h2">Canonical Architecture</div>
+
+    <div class="arch-box">User
+ │
+ ▼
+CEO (Claude Opus 4.6 — Paperclip, localhost:3100)
+ │  issues ONE task at a time
+ ▼
+Hermes Worker (MiniMax M2.7 — hermes-paperclip-adapter)  ← NOT WIRED YET
+ │  runs skills, spawns up to 3 parallel sub-sessions
+ ▼
+Skills (research-coordinator, web-research, etc.)
+ │  read/write results only via MemOS
+ ▼
+MemOS API (localhost:8001)
+ ├── Qdrant  (127.0.0.1:6333)  — vector search, local MiniLM embedder
+ ├── Neo4j   (127.0.0.1:7687)  — tree/graph memory
+ └── SQLite                    — structured memory + ACL
+
+Web Stack:
+ Firecrawl (localhost:3002) → SearXNG (localhost:8888) — unlimited search
+ Camofox (localhost:9377) — anti-bot browser, Cloudflare bypass</div>
+
+    <div class="insight">
+      <div class="insight-label">Token Burn Prevention Rule</div>
+      <p>Agents communicate ONLY via MemOS shared state, never agent-to-agent directly. Memory isolation: each agent has a private MemCube. CEO has ROOT role + explicit <code>share_cube_with_user()</code> grants — reads all cubes, results tagged with <code>cube_id</code>.</p>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Session 7 · Status Review &amp; Next Steps</span>
+      <span>12 of 16</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ CONSOLIDATED LEARNINGS -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--accent4);"></div>
+        <span class="page-session-label">Consolidated Learnings</span>
+      </div>
+      <span class="page-date">Cross-Session Insights</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Synthesis</div>
+      <div class="section-h1">Key Technical Lessons</div>
+      <p class="section-lead">Patterns and insights that appeared across multiple sessions — the non-obvious things that would have taken much longer to discover without structured documentation.</p>
+    </div>
+
+    <div class="section-h2">Security</div>
+
+    <div class="card card-red">
+      <div class="card-title">Never test your own security code</div>
+      <div class="card-body">The builder passes tests the builder wrote. A zero-knowledge audit by a fresh session (no context, no hints) found 15 vulnerabilities that 3 rounds of self-testing completely missed. This is now a repeatable practice: after hardening, always run a blind audit with a clean session.</div>
+    </div>
+
+    <div class="card card-yellow">
+      <div class="card-title">Auth ≠ Authorization — two separate layers</div>
+      <div class="card-body">Having MEMOS_AUTH_REQUIRED=true only proves the caller has a valid key. It does nothing to restrict which cubes they can access. You need both: middleware-level authentication AND endpoint-level authorization checks on every route that touches data.</div>
+    </div>
+
+    <div class="card card-yellow">
+      <div class="card-title">Cube ID != User ID — the #1 MemOS trap</div>
+      <div class="card-body">Agents address cubes by user_id (e.g., "ceo"). The UserManager DB stores them as cube_id (e.g., "ceo-cube"). Any access check that queries by cube_id alone silently fails. Always resolve through owner_id as fallback. This caused every authorization check to return False until fixed.</div>
+    </div>
+
+    <div class="section-h2">Infrastructure</div>
+
+    <div class="grid-2">
+      <div class="card card-accent">
+        <div class="card-title">Native modules + Node upgrades</div>
+        <div class="card-body">When Node.js major version updates (especially via Homebrew/Linuxbrew), native modules like better-sqlite3 must be rebuilt. Symptom: "Module did not self-register." Fix: <code>npm rebuild &lt;module&gt;</code>.</div>
+      </div>
+      <div class="card card-accent">
+        <div class="card-title">Paperclip zombie on DB crash</div>
+        <div class="card-body">Paperclip's embedded postgres can die without killing the node process. The node stays alive but can't serve requests. ECONNREFUSED on port 54329 means: kill the node process and restart — don't try to revive postgres separately.</div>
+      </div>
+      <div class="card card-accent">
+        <div class="card-title">Qdrant host+port SSL bug</div>
+        <div class="card-body">When api_key is set with host+port (not url), the Qdrant Python client defaults to HTTPS. Fix: explicitly pass <code>client_kwargs["https"] = False</code> for localhost connections in qdrant.py.</div>
+      </div>
+      <div class="card card-accent">
+        <div class="card-title">Profile .env replaces global .env</div>
+        <div class="card-body">When a Hermes profile activates, its .env replaces the global ~/.hermes/.env entirely — not appends. Every profile .env must include MINIMAX_API_KEY and DEEPSEEK_API_KEY or the agent will 401 on model calls.</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Consolidated Learnings</span>
+      <span>13 of 16</span>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--accent4);"></div>
+        <span class="page-session-label">Consolidated Learnings (continued)</span>
+      </div>
+      <span class="page-date">Architecture Decisions</span>
+    </div>
+
+    <div class="section-h2">Key Architectural Decisions</div>
+
+    <div class="card card-purple">
+      <div class="card-title">SearXNG over Brave Search</div>
+      <div class="card-body">Free, unlimited, multi-engine. Brave credits exhausted in 6 days on agentic workloads. SearXNG's cross-engine scoring provides natural quality ranking (found by 3+ engines = high confidence). Returns 40+ results vs Brave's 5–10. Trade-off: occasional noise from engine disagreement, but agents filter this during synthesis.</div>
+    </div>
+
+    <div class="card card-purple">
+      <div class="card-title">Holographic + MemOS (not either/or)</div>
+      <div class="card-body">Holographic = agent's personal learning (trust scoring, entities, contradictions, within-profile). MemOS = organizational knowledge (cross-agent, CEO reads all cubes). They serve different scopes and complement each other. Holographic for local reasoning, MemOS for shared state between agents.</div>
+    </div>
+
+    <div class="card card-purple">
+      <div class="card-title">Profile isolation + shared skills</div>
+      <div class="card-body">Memory isolated (agents don't leak context to each other via separate MemCubes). Skills shared (improvements propagate via external_dirs + GitHub repo). Mirrors how human teams work: private notes, shared playbooks.</div>
+    </div>
+
+    <div class="card card-purple">
+      <div class="card-title">Collect trajectories without immediate RL</div>
+      <div class="card-body">Zero cost to collect. High cost not to have when needed. Nightly trajectory export captures every session as potential training data for a future fine-tuned model that knows specific research methodology. Start now, fine-tune later.</div>
+    </div>
+
+    <div class="section-h2">Site-Packages Warning</div>
+
+    <div class="callout">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-body">
+        <div class="callout-title">All MemOS patches live in site-packages</div>
+        <div class="callout-text">Every security fix, search tuning change, and auth improvement is in <code>~/.local/lib/python3.12/site-packages/memos/</code>. A <code>pip install --upgrade memos</code> will silently overwrite all of them. These need to be upstreamed or maintained as a patch file. Do not upgrade MemOS without reapplying all patches.</div>
+      </div>
+    </div>
+
+    <div class="section-h2">Domain Routing Rules</div>
+
+    <table>
+      <thead>
+        <tr><th>Domain</th><th>Tool</th><th>Reason</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>reddit.com</code></td><td>Rewrite to old.reddit.com</td><td>New Reddit blocks scrapers; old.reddit.com is static HTML</td></tr>
+        <tr><td><code>github.com</code></td><td>Basic Firecrawl only</td><td>No Playwright/mobile flags needed, simpler is faster</td></tr>
+        <tr><td>Anti-bot sites (Idealista etc.)</td><td>Camofox browser_navigate</td><td>Camoufox fingerprint spoofing bypasses Cloudflare/anti-bot</td></tr>
+        <tr><td>SearXNG search</td><td>Firecrawl → SearXNG</td><td>No rate limit (self-hosted), multi-engine aggregation</td></tr>
+        <tr><td>JS-rendered pages</td><td>Firecrawl /v1/scrape + Playwright</td><td>Static fetcher can't see dynamic content</td></tr>
+      </tbody>
+    </table>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Consolidated Learnings · Architecture Decisions</span>
+      <span>14 of 16</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ FILE MAP -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--accent2);"></div>
+        <span class="page-session-label">Reference</span>
+      </div>
+      <span class="page-date">File Map &amp; Patch Inventory</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Reference</div>
+      <div class="section-h1">Complete File Map</div>
+      <p class="section-lead">All files created or modified across the session period. Organized by system.</p>
+    </div>
+
+    <div class="section-h2">MemOS Patches (site-packages)</div>
+
+    <table>
+      <thead>
+        <tr><th>File</th><th>What Changed</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>api/middleware/agent_auth.py</code></td><td>Per-agent auth, bcrypt v2, rate limiting, auto-reload on mtime</td></tr>
+        <tr><td><code>api/middleware/request_context.py</code></td><td>Strip Authorization/cookie headers from logs</td></tr>
+        <tr><td><code>api/server_api.py</code></td><td>Register RateLimitMiddleware + admin_router, localhost bind via MEMOS_BIND_HOST</td></tr>
+        <tr><td><code>api/routers/server_router.py</code></td><td><code>_enforce_cube_access()</code> helper, auth on 11 endpoints, scheduler caps</td></tr>
+        <tr><td><code>api/routers/admin_router.py</code></td><td>Full rewrite: bcrypt v2 key management via agents-auth.json</td></tr>
+        <tr><td><code>api/handlers/search_handler.py</code></td><td>Spoof check + cube isolation + search tuning (all env-configurable)</td></tr>
+        <tr><td><code>api/handlers/add_handler.py</code></td><td>Spoof check + cube isolation + empty content rejection + log summary</td></tr>
+        <tr><td><code>api/handlers/component_init.py</code></td><td>Inject UserManager into HandlerDependencies</td></tr>
+        <tr><td><code>api/product_models.py</code></td><td>Relativity default 0.20 → 0.05</td></tr>
+        <tr><td><code>mem_user/user_manager.py</code></td><td>Cube resolution: cube_id → cube_name → owner_id</td></tr>
+        <tr><td><code>vec_dbs/qdrant.py</code></td><td>Pass API key with host+port mode, force https=False</td></tr>
+        <tr><td><code>templates/mem_reader_prompts.py</code></td><td>Granularity rule, English language enforcement</td></tr>
+        <tr><td><code>multi_mem_cube/single_cube.py</code></td><td>Write-time dedup (cosine ≥ 0.90)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-h2">Hermes Config Files</div>
+
+    <table>
+      <thead>
+        <tr><th>File</th><th>What Changed</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>~/.hermes/config.yaml</code></td><td>17 settings changed (web backend, fallback, memory, vision, STT, etc.)</td></tr>
+        <tr><td><code>~/.hermes/.env</code></td><td>3 keys added (DeepSeek, Gemini, Deepgram), 2 removed (corrupted), timeout fixed</td></tr>
+        <tr><td><code>~/.hermes/profiles/research-agent/config.yaml</code></td><td>Full rewrite with all optimizations</td></tr>
+        <tr><td><code>~/.hermes/profiles/email-marketing/config.yaml</code></td><td>Full rewrite with all optimizations</td></tr>
+        <tr><td><code>~/.hermes/profiles/research-agent/SOUL.md</code></td><td>Web stack section updated (SearXNG, domain routing rules)</td></tr>
+        <tr><td><code>~/.openclaw/workspace/firecrawl/.env</code></td><td>Added SEARXNG_ENDPOINT</td></tr>
+        <tr><td><code>~/.openclaw/workspace/firecrawl/docker-compose.yaml</code></td><td>Added SearXNG service</td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-h2">New Files Created</div>
+
+    <div class="grid-2">
+      <div>
+        <div class="kv-grid">
+          <span class="kv-key">setup-web-stack.sh</span><span class="kv-val">Bootstrap Firecrawl+SearXNG+Camofox</span>
+          <span class="kv-key">hermes_lib.py</span><span class="kv-val">Python library for programmatic access</span>
+          <span class="kv-key">setup-memos-agents.py</span><span class="kv-val">Provision MemOS cubes and roles</span>
+          <span class="kv-key">agents-auth.json</span><span class="kv-val">Per-agent bcrypt key registry</span>
+          <span class="kv-key">start-memos.sh</span><span class="kv-val">Decrypt secrets + start server</span>
+          <span class="kv-key">~/.memos/secrets.env.age</span><span class="kv-val">Age-encrypted secrets</span>
+        </div>
+      </div>
+      <div>
+        <div class="kv-grid">
+          <span class="kv-key">plugins/quality-monitor/</span><span class="kv-val">Tool call logging + quality scores</span>
+          <span class="kv-key">plugins/memos-toolset/</span><span class="kv-val">Native memos_store + memos_search</span>
+          <span class="kv-key">tests/blind-audit-prompt.md</span><span class="kv-val">Reusable zero-knowledge audit prompt</span>
+          <span class="kv-key">camofox/server.js (patch)</span><span class="kv-val">Bind to CAMOFOX_BIND_HOST</span>
+          <span class="kv-key">camofox.service</span><span class="kv-val">Systemd user service for Camofox</span>
+          <span class="kv-key">sergiocoding96/hermes-deploy</span><span class="kv-val">Private GitHub repo, all configs</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Reference · File Map &amp; Patch Inventory</span>
+      <span>15 of 16</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ CLOSING -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-left">
+        <div class="session-dot" style="background:var(--accent);"></div>
+        <span class="page-session-label">Summary</span>
+      </div>
+      <span class="page-date">Where Things Stand</span>
+    </div>
+
+    <div class="section-title-block">
+      <div class="section-eyebrow">Closing Summary</div>
+      <div class="section-h1">Where Things Stand</div>
+      <p class="section-lead">The full infrastructure stack is live, secure, and documented. The gap is orchestration: CEO cannot yet spawn workers, and workers don't yet persist results to shared memory. Five tasks remain to close the loop.</p>
+    </div>
+
+    <div class="section-h2">Score Card</div>
+
+    <div class="grid-2">
+      <div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Hermes Config (start → end)</span><span>5.2 → 7.3</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:73%;"></div></div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>MemOS Security (start → end)</span><span>2 → 9.5</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:95%;background:linear-gradient(90deg,var(--green),var(--accent2));"></div></div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Cube Isolation</span><span>3 → 10</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:100%;background:var(--green);"></div></div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Memory Quality (search recall)</span><span>1/12 → 5+/12</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:70%;"></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Authentication</span><span>2 → 9</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:90%;background:linear-gradient(90deg,var(--yellow),var(--green));"></div></div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Secret Management</span><span>1 → 7</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:70%;"></div></div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>Infrastructure Exposure</span><span>1 → 9</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:90%;background:linear-gradient(90deg,var(--yellow),var(--green));"></div></div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label"><span>End-to-End Orchestration</span><span>0 → 0</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:5%;background:var(--red);"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-h2">Remaining Gaps for Hermes 8.0+</div>
+
+    <div class="grid-2">
+      <div class="card" style="border-color:var(--red);opacity:0.9;">
+        <div class="card-title" style="color:var(--red);">Not Connected Yet</div>
+        <div class="card-body">
+          → hermes-paperclip-adapter (CEO cannot spawn workers)<br>
+          → MemOS dual-write in research skills (no compounding memory)<br>
+          → Soft feedback loop (HEARTBEAT → skill patches)<br>
+          → Hard autoresearch loop (quality gating + auto-patch)
+        </div>
+      </div>
+      <div class="card" style="border-color:var(--yellow);opacity:0.9;">
+        <div class="card-title" style="color:var(--yellow);">Known Technical Debt</div>
+        <div class="card-body">
+          → All MemOS patches in site-packages (lost on upgrade)<br>
+          → Bcrypt auth is O(n) — needs SHA-256 LRU cache at scale<br>
+          → /health endpoint is a static 200 (doesn't check backends)<br>
+          → No TLS on localhost connections<br>
+          → Webhooks (0/10) and MCP (0/10) still unused
+        </div>
+      </div>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">The System in One Sentence</div>
+      <p>A fully secured, locally-hosted multi-agent research infrastructure with Claude Opus 4.6 as CEO, MiniMax M2.7 workers, unlimited SearXNG web search, anti-bot Camofox browser, and isolated MemOS memory — missing only the orchestration adapter that lets CEO spawn and direct workers.</p>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="page-footer">
+      <span>Hermes Multi-Agent System · Project Learnings · April 2026</span>
+      <span>16 of 16</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
