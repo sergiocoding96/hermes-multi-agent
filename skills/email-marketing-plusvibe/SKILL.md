@@ -264,39 +264,74 @@ Email 4: Breakup with door-open
 
 ## Phase 4 -- MemOS Dual-Write
 
-After creating the campaign deliverables, persist to MemOS.
+After creating the campaign deliverables, persist them to MemOS using the
+`memos_store` tool from the memos-toolset plugin. This compounds memory
+across sessions so the CEO and other agents can recall past campaigns,
+benchmarks and prospect insights.
+
+### Why a tool, not curl
+
+The `memos_store` tool injects identity (user_id, cube_id, API key) from the
+profile env vars at call time. The agent never sees credentials. Do NOT use
+raw curl — there is no Authorization header to set, no cube to specify,
+nothing to copy-paste wrong.
 
 ### Write Protocol
 
-For EACH major deliverable (campaign plan, segment definition, subject line set):
+Derive these once for the whole campaign:
+- `campaign_slug`: lowercase-hyphenated form of the campaign name (max 6 words)
+- `session_id`: short id reused across all writes for this run (e.g.
+  `email-YYYYMMDD-HHMM` or the first 8 chars of a hash of the campaign name)
+- `campaign_type`: one of `cold-outreach`, `re-engagement`, `nurture`,
+  `partner-outreach`, or your own descriptor
 
-```bash
-curl -s -X POST http://localhost:8001/product/add \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "email-marketing-agent",
-    "writable_cube_ids": ["email-mkt-cube"],
-    "async_mode": "sync",
-    "messages": [
-      {
-        "role": "assistant",
-        "content": "[DELIVERABLE]: [title]\n\n[Full content of deliverable]"
-      }
-    ],
-    "custom_tags": ["email", "campaign", "[campaign-type]"],
-    "info": {
-      "source_type": "email_campaign",
-      "campaign_type": "[welcome|nurture|reengagement|announcement]",
-      "email_count": [N]
-    }
-  }'
+Then write the following memories:
+
+**1. Campaign Summary** -- one call, the campaign overview + audience + goal:
+```
+memos_store(
+  content="CAMPAIGN SUMMARY: <name>\n\nGoal: <goal>\nAudience: <segment + behavioral def>\nEmails: <N> over <X> days\nTrigger: <trigger>\nExpected open rate: <X%> (industry avg: <Y%>)\nExpected click rate: <X%> (industry avg: <Y%>)",
+  tags=["email", "campaign-summary", "campaign=<campaign_slug>", "type=<campaign_type>", "source=email-marketing-plusvibe", "session=<session_id>"]
+)
 ```
 
+**2. Email Sequence** -- one call PER email in the sequence (atomic memories
+search better than a single big blob):
+```
+memos_store(
+  content="EMAIL <n>/<N> -- Day <d> -- <subject line>\n\nPurpose: <purpose>\nCTA: <cta>\nFramework: <subject framework>\nBody: <body or 2-3 sentence summary>",
+  tags=["email", "email-step", "campaign=<campaign_slug>", "step=<n>", "source=email-marketing-plusvibe", "session=<session_id>"]
+)
+```
+
+**3. Subject Line Variants** -- one call per email's variant set:
+```
+memos_store(
+  content="SUBJECT VARIANTS for email <n> of <campaign>:\n\n1. <variant 1> -- <framework>\n2. <variant 2> -- <framework>\n...",
+  tags=["email", "subject-variants", "campaign=<campaign_slug>", "step=<n>", "source=email-marketing-plusvibe", "session=<session_id>"]
+)
+```
+
+**4. Audience Segments + Benchmarks** -- one call each, separate so they
+can be retrieved independently for future campaigns.
+
+**5. Long passages** -- if any single content block exceeds **~500 words**,
+SPLIT it into sequential ≤500-word chunks and call `memos_store` once per
+chunk. Add a `chunk=N/M` tag so the chunks can be reassembled. Split at
+paragraph boundaries, never mid-sentence.
+
 ### Write Rules
-- One POST per deliverable (campaign plan, segment def, subject line set)
-- async_mode MUST be "sync"
-- If POST returns non-200, log the error but DO NOT retry
-- Include campaign_type in info metadata
+- One `memos_store` call per atomic deliverable (campaign summary, each
+  email step, each subject set, each segment definition).
+- Always include `campaign=`, `source=email-marketing-plusvibe`, `session=`
+  tags so you can retrieve all memories from a single run with one search.
+- The tool returns JSON: on success `{"status": "stored", ...}`; on failure
+  `{"status": "error", "error": "...", "detail": "..."}`. If you see an
+  error, **log it in the chat once and CONTINUE the campaign** — memory
+  writes are best-effort and must NEVER fail the skill.
+- Do NOT retry on error (avoids token burn and duplicate memories).
+- Do NOT include credentials or cube_ids in the call — the plugin handles
+  identity from env vars.
 
 ---
 
