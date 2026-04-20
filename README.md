@@ -2,6 +2,8 @@
 
 Layered multi-agent research and execution architecture using **Paperclip + Hermes + MemOS** with autoresearch-style self-improving feedback loops.
 
+> **Active migration in progress (Sprint 2).** Read [`memos-setup/learnings/2026-04-20-v2-migration-plan.md`](memos-setup/learnings/2026-04-20-v2-migration-plan.md) before making assumptions about the memory architecture — we're moving from a MemOS server model to an embedded plugin model. See also [`scripts/worktrees/migration/README.md`](scripts/worktrees/migration/README.md) for per-worktree task briefs.
+
 ## Quick Start on a Fresh Machine
 
 ```bash

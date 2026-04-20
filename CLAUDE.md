@@ -1,5 +1,19 @@
 # Hermes Multi-Agent Research System
 
+## 🚨 Active sprint — read this first
+
+**Sprint 2 in progress: migrating from MemOS server (Product 1) to `@memtensor/memos-local-hermes-plugin` (Product 2).**
+
+Any new agent working in this repo (especially on branches starting with `feat/migrate-*`, `wire/*`, `docs/write-v2-*`, `hermes/*`) should read these before acting:
+
+1. **Master plan:** [`memos-setup/learnings/2026-04-20-v2-migration-plan.md`](memos-setup/learnings/2026-04-20-v2-migration-plan.md) — why we're migrating, 5-stage plan, rollback
+2. **Execution guide:** [`scripts/worktrees/migration/README.md`](scripts/worktrees/migration/README.md) — which session runs what, in what order
+3. **Sprint 1 history:** [`memos-setup/learnings/2026-04-20-sprint-merge-log.md`](memos-setup/learnings/2026-04-20-sprint-merge-log.md) — what we shipped in the server-hardening sprint (scored 9.1/10)
+
+If you are working inside a **worktree** under `~/Coding/Hermes-wt/`, read the `TASK.md` in that directory — it's your full brief.
+
+Sprint 2 replaces the MemOS server with a local plugin. Don't assume the server is authoritative — check the master plan for current state.
+
 ## Working Rules
 - **ALWAYS use parallel agents for independent tasks.** When multiple fixes, tests, or investigations can run simultaneously, launch them all in one message. Never serialize work that can be parallelized.
 - **ALWAYS read entire documentation before creating skills or integrations.** Use Firecrawl (localhost:3002) if WebFetch struggles with JS-rendered docs. Never create a skill based on partial information.
