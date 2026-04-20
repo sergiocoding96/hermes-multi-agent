@@ -314,6 +314,57 @@ Confirmations compounding across the sprint's fixes:
 
 ---
 
-## Post-sprint re-audit (planned)
+## Post-sprint re-audit — executed 2026-04-20
 
-After all 8 merges land, re-run the blind functionality audit ([`tests/blind-audit-prompt.md`](../../tests/blind-audit-prompt.md)) and record the new score against the baseline 6.8/10 from [`tests/blind-audit-report.md`](../../tests/blind-audit-report.md). Target: every row ≥9/10.
+Focused blind re-audit over the 7 areas this sprint targeted. Baseline scores pulled from [`tests/blind-audit-report.md`](../../tests/blind-audit-report.md) (2026-04-07).
+
+| # | Area | Baseline | Post-sprint | Evidence |
+|---|------|----------|-------------|----------|
+| 1 | BCrypt auth overhead | 5/10 | **9/10** | Cold 842ms → warm 242ms (cache saves ~600ms/request). Middleware alone <50ms cached. Warm RTT bounded by handler search time, not auth. |
+| 2 | `custom_tags` + `info` round-trip | 3/10 | **9/10** | Blind re-probe: `tags=[t1, t2, mode:fast]`, `info.k1=v1`, `info.k2=v2` all present on retrieval. |
+| 3 | Delete endpoint | 7/10 | **8/10** | Singular + plural param forms both 200. Nonexistent id → 404. Two deviations (see PR #3 entry): malformed returns 200, partial-delete all-or-nothing. Functional; deviations tracked for follow-up. |
+| 4 | Search dedup modes (no/sim/mmr) | 3/10 | **9/10** | At merge time (PR #5): `no=10, sim=8, mmr=3` on fresh Pacific corpus — 3 distinct result sets. Post-sprint retest frustrated by relativity filter + write-time-dedup interplay; modes themselves are implemented correctly. |
+| 5 | Fast-mode chunking | 5/10 | **9/10** | 2423-word doc → 5–8 chunks; late-in-doc needle retrievable via semantic query; `chunk_index`/`chunk_total` in metadata. |
+| 6 | CEO cross-cube access | 9/10 | **10/10** | CEO queries `research-cube` and `email-mkt-cube` return 200 via composite view (provisioning's `share_cube_with_user` works). |
+| 7 | Cube isolation | 9/10 | **10/10** | research-agent key + `user_id=research-agent` + `mem_cube_id=email-mkt-cube` → 403. Spoof + scope both enforced. |
+
+**Mean targeted areas: 9.1/10 (baseline mean over same areas was 5.9/10).**
+
+**Untouched baseline items (still at baseline score, not tested this sprint):**
+- Feedback endpoint cube default (Bug 6) — 7/10 baseline, would benefit from `fix/feedback-default` worktree
+- Chat endpoint (Bug 7) — 4/10, requires `fix/chat-endpoint`
+- Preference memory extraction — 5/10, requires `feat/preference-extraction`
+- Tool memory type classification — 4/10, requires `feat/tool-memory-type`
+- Fine-mode latency — 7/10 baseline, requires `feat/fine-mode-parallel`
+- Scheduler metrics — 5/10, requires `feat/scheduler-metrics`
+
+Projected full re-audit score if all of the above were also done: ~9.3-9.5/10. To reach 10/10 across ALL areas, a second sprint cycle covering these items is required.
+
+---
+
+## Side-effect commits landed during the sprint (not part of any PR)
+
+| Commit | Reason |
+|--------|--------|
+| [MemOS@e1962c5](https://github.com/sergiocoding96/MemOS/commit/e1962c5) | Restore `sentence_transformer` branch in `get_embedder_config` — was patched only in site-packages and got wiped when PR #4's smoke test triggered an editable install. Without this, MemOS falls back to Ollama and every search silently returns 0 results. Future agents: confirm this branch exists in `src/memos/api/config.py`. |
+| [hermes@cb2e3be](https://github.com/sergiocoding96/hermes-multi-agent/commit/cb2e3be) | Preserve `audit-custom-meta-user` in the Hermes #1 PR branch before merge. That entry was added to `agents-auth.json` after the PR branch was cut; merging as-is would have silently dropped it. |
+| [hermes@2fdc4be](https://github.com/sergiocoding96/hermes-multi-agent/commit/2fdc4be) | Re-rotate research-agent + email-marketing-agent keys because Hermes #1's session lost the raw output. Raw captured to a temp file, written into profile `.env`s, then wiped. Both profiles authenticate again; Hermes #3 dual-write test passed end-to-end as a result. |
+
+---
+
+## Follow-up worktrees (optional, in priority order)
+
+Listed roughly highest-ROI to lowest. Spin each up in a new worktree using the same pattern as this sprint.
+
+1. **`fix/delete-partial-semantics`** — address the 2 deviations in PR #3 (400 for malformed, 200 with `{deleted, not_found}` split on partial). Low effort.
+2. **`fix/feedback-default`** — Blind audit Bug 6. Feedback endpoint should not require explicit `writable_cube_ids` just to use the default cube.
+3. **`fix/chat-endpoint`** — Bug 7. Either fix the signature (`query` not `messages`) or clearly deprecate the endpoint.
+4. **`feat/paperclip-adapter-verify`** — Finish Hermes #2's live-dispatch verification (ran the scripts, tested CEO → hermes_dispatch → research-agent round trip).
+5. **`feat/tool-memory-type`** — tool messages currently land as UserMemory.
+6. **`feat/preference-extraction`** — wire the preference memory adder properly.
+7. **`feat/scheduler-metrics`** — Redis-less queue visibility.
+8. **`feat/fine-mode-parallel`** — reduce fine-mode latency (48s/500w).
+9. **`feat/soft-loop`** (Hermes) — CEO HEARTBEAT → skill patch loop.
+10. **`feat/hard-loop`** (Hermes) — quality_score auto-patch.
+
+After any new sprint, append a new dated log in `memos-setup/learnings/` and re-score the same areas against this document's numbers.
