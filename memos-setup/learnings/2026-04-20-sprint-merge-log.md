@@ -245,6 +245,39 @@ Until those keys are re-rotated *with stdout captured* and the raw values writte
 
 ---
 
+### Hermes PR #2 — `paperclip-adapter` — MERGED ✓ (partial verification, live dispatch test deferred)
+
+- **Merge commit:** squash-merged (see [sergiocoding96/hermes-multi-agent main](https://github.com/sergiocoding96/hermes-multi-agent/commits/main))
+- **Files added:** 5 new, 569 lines — `scripts/paperclip/README.md`, `apply-ceo-soul.sh`, `create-hermes-employees.sh`, `install-hermes-adapter.sh`, `soul/CEO-SOUL.md`
+- **Type:** additive — no existing file modified, zero conflict risk.
+
+**Blind checks performed:**
+
+| Check | Result |
+|-------|--------|
+| All 3 shell scripts pass `bash -n` syntax validation | ✓ |
+| Paperclip reachable at `tower.taila4a33f.ts.net:3100` (HTTP 200) | ✓ |
+| Adapter actually installed into Paperclip's registry | ⚠ not executed (`install-hermes-adapter.sh` not run in this merge window) |
+| End-to-end CEO → `hermes_dispatch` → research-agent brief | ⚠ deferred |
+| CEO → email-marketing dispatch | ⚠ deferred |
+
+**Why deferred:** per user's explicit direction — *"merge paperclip so we don't lose what's been done, we can update later as well"*. The per-task verification doesn't require the adapter to be runtime-active yet; the scripts and SOUL template are reviewed content. Live dispatch testing will happen as a follow-up sprint action.
+
+**What future agents should run to complete verification:**
+```bash
+bash ~/Coding/Hermes/scripts/paperclip/install-hermes-adapter.sh
+bash ~/Coding/Hermes/scripts/paperclip/create-hermes-employees.sh
+bash ~/Coding/Hermes/scripts/paperclip/apply-ceo-soul.sh
+# then issue a test task via the Paperclip CEO UI or API and confirm:
+#   - CEO's SOUL.md sees `hermes_dispatch` as an available tool
+#   - Dispatching profile="research-agent", task="brief test" returns text in < 60s
+#   - Dispatching to a nonexistent profile returns a clean error (not a silent hang)
+```
+
+**Notes:** Once the dispatch path is live, H1 ("hermes-paperclip-adapter not installed in Paperclip") will clear from the Hermes integration-gap list. Until then, treat it as "code-merged, runtime-unverified".
+
+---
+
 <!-- next-entry -->
 
 ---
