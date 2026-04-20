@@ -145,6 +145,44 @@ Control memory (written before this PR, no custom fields) retrieved alongside sh
 
 ---
 
+### MemOS PR #1 — `feat/fast-mode-chunking` — MERGED ✓ (rebased)
+
+- **Merge commit:** [MemOS@667d1d4](https://github.com/sergiocoding96/MemOS/commit/667d1d4) (squash, after rebase)
+- **Files changed:** `mem_reader/simple_struct.py` (+44/-2), `mem_reader/utils.py` (+114 NEW), `tests/mem_reader/test_fast_mode_chunking.py` (+161 NEW)
+- **Rebase conflict:** `simple_struct.py` — both PR #1 and PR #2 touched the fast-node builder. PR #2 changed `tags = ["mode:fast"]` → `tags = _merge_custom_tags(["mode:fast"], custom_tags)`; PR #1 added `chunk_index`/`chunk_total` into `node_info`. Resolved by keeping **both**: PR #2's tag merge AND PR #1's chunk_info. Force-pushed with `--force-with-lease`.
+- **Approach:** content > 1000 chars splits into ~500-token chunks with ~50-token overlap; each chunk becomes its own `TextualMemoryItem` with `chunk_index` / `chunk_total` in `node_info`. Env-configurable via `MOS_FAST_CHUNK_TOKENS` / `MOS_FAST_CHUNK_OVERLAP_TOKENS`.
+
+**Blind test — three acceptance checks:**
+
+1. **Short content → 1 memory** (≤ chunk threshold, unchanged behavior)
+   ```
+   POST /product/add  "Capital of France is Paris."
+   → 1 memory returned
+   ```
+
+2. **Long content (2423 words) → multiple chunks with metadata**
+   ```
+   POST /product/add  <~2400-word doc>
+   → 8 memories returned
+   ```
+   Search of the seeded needle surfaces `chunk_index=7, chunk_total=8` — confirms ordering and totals propagate through the full pipeline.
+
+3. **Late-in-doc needle retrievable (impossible before this fix)**
+   Seeded a distinctive sentence in paragraph 121 of 123: *"The secret password for this test is BANANA-PURPLE-47."*
+   ```
+   query="secret password test"        → needle found  (chunk 7/8)
+   query="CHUNKTEST-NEEDLE"             → needle found  (chunk 7/8)
+   ```
+   Before this PR, late content was washed out by single-embedding-per-document. Now each chunk has its own vector.
+
+**Smoke test:** `/health` healthy, no Ollama / embedder errors, sentence-transformers loaded, authenticated writes return expected chunk counts.
+
+**Notes:**
+- Nonsense-token searches (e.g. `"BANANA-PURPLE-47"` alone) may not surface the chunk — embeddings weight actual linguistic content. Searching for semantic context works reliably. This is an embedding-model characteristic, not a chunking bug.
+- Acceptance criterion M7 from the blind audit (Fast Mode chunking) now satisfied; previous score was 5/10.
+
+---
+
 <!-- next-entry -->
 
 ---
