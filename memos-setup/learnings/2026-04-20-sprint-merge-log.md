@@ -116,6 +116,35 @@ Raw top-3 content per mode (relativity in brackets):
 
 ---
 
+### MemOS PR #2 — `fix/custom-metadata` — MERGED ✓
+
+- **Merge commit:** [MemOS@78dea7d](https://github.com/sergiocoding96/MemOS/commit/78dea7d) (squash)
+- **Files changed:** `add_handler.py` (+39/-8), `mem_reader/multi_modal_struct.py` (+19/-3), `mem_reader/simple_struct.py` (+45/-3), `tests/api/test_add_handler_info.py` (+50 NEW), `tests/mem_reader/test_simple_structure.py` (+84/-1)
+- **Approach:** narrow `_RESERVED_INFO_KEYS` frozenset ({`merged_from`}); user-supplied reserved keys renamed to `user:<key>` namespace; everything else passes through unchanged. Custom tags merged with mode tag via `_merge_custom_tags` helper, propagated through fine-mode reader too.
+
+**Blind test — single write with `custom_tags` + `info`, then search + inspect metadata:**
+
+```
+POST /product/add  (ceo-cube)
+  custom_tags=["finance","quarterly","marker:custmeta"]
+  info={"source_type":"web","topic":"earnings","region":"europe"}
+→ 200 memory added
+
+POST /product/search  (top_k=3, query unique marker)
+→ tags:      ['mode:fast', 'finance', 'quarterly', 'marker:custmeta']   ✓ all 3 + mode preserved
+→ metadata.source_type = 'web'        ✓
+→ metadata.topic       = 'earnings'   ✓
+→ metadata.region      = 'europe'     ✓
+```
+
+Control memory (written before this PR, no custom fields) retrieved alongside shows `tags: ['mode:fast']`, no spurious info keys — backward compat preserved. Blind audit Bug 3 resolved.
+
+**Smoke test (post-restart):** `/health` healthy, no ollama errors, SentenceTransformer loaded, authenticated request returned expected data.
+
+**Notes:** The info keys (`source_type`, `topic`, `region`) are promoted to top-level metadata fields, not nested under `metadata.info`. Acceptable — consumers that want to filter on them query the top level directly.
+
+---
+
 <!-- next-entry -->
 
 ---
