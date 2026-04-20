@@ -278,6 +278,38 @@ bash ~/Coding/Hermes/scripts/paperclip/apply-ceo-soul.sh
 
 ---
 
+### Hermes PR #3 — `memos-dual-write` — MERGED ✓ + end-to-end verified
+
+- **Merge commit:** [hermes@a36e344](https://github.com/sergiocoding96/hermes-multi-agent/commit/a36e344) (squash)
+- **Files changed:** `skills/research-coordinator/SKILL.md` (+57/-27), `skills/email-marketing-plusvibe/SKILL.md` (+61/-26)
+- **Approach:** skills now call the `memos_store` tool (from the `memos-toolset` plugin at `~/.hermes/plugins/memos-toolset/`) for every major deliverable. Identity (user_id, cube_id, API key) injected from profile `.env` at call time — the LLM never sees credentials.
+
+**Pre-test remediation (done before this merge):**
+The session that produced Hermes #1 rotated keys but lost the raw output — profile `.env`s held stale keys that would have 401'd here. Used the MemOS admin router (`POST /admin/keys/rotate`) to re-rotate both agents, captured raw output via a temp file, wrote the new `MEMOS_API_KEY=ak_…` into each profile's `.env`, and wiped the temp file. See commit [hermes@2fdc4be](https://github.com/sergiocoding96/hermes-multi-agent/commit/2fdc4be).
+
+**Blind end-to-end test — per profile, through the plugin:**
+
+Loaded each profile's `.env` into the process environment and directly invoked `handlers.memos_store(...)` with a unique marker + `custom_tags`:
+
+| Profile | `memos_store` result | Verify-search | Tags on stored memory |
+|---------|-----------------------|---------------|------------------------|
+| research-agent | `status=stored, cube=research-cube` ✓ | 3 matches, marker present ✓ | `['mode:fast', 'sprint-test', 'profile:research-agent']` ✓ |
+| email-marketing | `status=stored, cube=email-mkt-cube` ✓ | 3 matches, marker present ✓ | `['mode:fast', 'sprint-test', 'profile:email-marketing']` ✓ |
+
+Confirmations compounding across the sprint's fixes:
+- ✅ Rotated keys from Hermes #1 work (both profiles authenticate)
+- ✅ Custom tags from MemOS #2 preserved through the plugin path
+- ✅ Identity injection from env — plugin handler source shows `os.environ["MEMOS_API_KEY"]` read at invocation, never leaked to LLM args
+- ✅ Write-time dedup (from PATCHES.md) behaves predictably — 3 matches on the unique marker include one newly-stored + prior related
+
+**Smoke test:** MemOS remains healthy, `memos_search` also callable end-to-end via the same plugin, skills' dev copies in `~/.hermes/skills/` already match the merged repo copies (bit-identical — `diff -q` silent).
+
+**Notes / deferred:**
+- Running research-coordinator or plusvibe via the Hermes CLI is the next level of test (skill invocation → LLM → memos_store tool call → MemOS). Not blocked on anything; can be triggered at any time by running `hermes -p research-agent chat -q "Research X — short brief"` and querying MemOS afterward.
+- The paperclip-adapter wiring (Hermes #2) remains deferred per user direction.
+
+---
+
 <!-- next-entry -->
 
 ---
