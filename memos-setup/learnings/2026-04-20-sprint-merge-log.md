@@ -76,6 +76,46 @@ req  status  elapsed_ms  note
 
 ---
 
+### MemOS PR #5 — `fix/search-dedup` — MERGED ✓
+
+- **Merge commit:** [MemOS@0c0aa97](https://github.com/sergiocoding96/MemOS/commit/0c0aa97) (squash)
+- **Files changed:** `src/memos/api/handlers/search_handler.py` (+73/-509), `tests/api/test_search_handler_dedup.py` (+225 NEW)
+- **Approach:** threshold becomes env-configurable (`MOS_MMR_TEXT_THRESHOLD`, default 0.85), fill-back logic removed so `sim` / `mmr` produce genuinely different result sets. `no` now cleanly strips embeddings without dedup.
+
+**Pre-flight config fix applied to main (side-effect of merge #4's editable install):**
+- Commit [MemOS@e1962c5](https://github.com/sergiocoding96/MemOS/commit/e1962c5) restored the `sentence_transformer` branch in `api/config.py` → `get_embedder_config()`.
+- Root cause: that patch had lived in site-packages only. The editable install in PR #4's smoke-test pulled source-tree `config.py` in place, and source only knew `universal_api` / `ollama`. Without `sentence_transformer`, the embedder fell back to Ollama and every search silently returned 0 results with `ConnectionError` in logs.
+- Future agents: if you see `embedders/ollama.py ... ConnectionError` in MemOS logs, confirm `get_embedder_config()` supports `MOS_EMBEDDER_BACKEND=sentence_transformer`.
+
+**Blind test — seeded corpus in `ceo-cube`, compared three modes on same query:**
+
+Seeds: 5 distinct facts + 12 lexically-varied "Pacific Ocean is largest" variants (needed lexical variation because write-time dedup at cosine ≥ 0.90 eats closer paraphrases). Survived write-time: **10 Pacific-related memories + 5 distinct controls**.
+
+Query: `"biggest ocean water Pacific"`, `top_k=10`:
+```
+dedup=no    count=10   (all "Pacific" memories, ranked by relativity)
+dedup=sim   count= 8   (dropped 2 items too similar to top-ranked neighbors)
+dedup=mmr   count= 3   (aggressive diversity penalty — kept 3 distinct)
+```
+
+Raw top-3 content per mode (relativity in brackets):
+- `no[0]` = *"biggest body of seawater…"* (rel 0.69)
+- `sim` skipped rank-1 and rank-2 from `no` (semantic duplicates of "biggest seawater")
+- `mmr[2]` = *"Pacific stretches further than any other…"* (rel 0.43) — lowest-relativity result selected because it's most dissimilar from already-chosen
+
+**Three modes → three different result sets.** Blind audit Bug 4 ("dedup search modes non-functional") resolved.
+
+**Smoke test (post-restart with config fix):**
+- `/health` → healthy
+- No more `ConnectionError: ollama` in logs after sentence_transformer branch added
+- SentenceTransformer model loaded on startup (warning about `embedding_dims` being ignored is cosmetic — model dims are intrinsic)
+
+**Notes / deviations:**
+- Test corpus had to be crafted more carefully than TASK.md suggested — cosine-0.90 write-time dedup is more aggressive than anticipated. Solution: use lexically-varied semantic siblings instead of direct paraphrases. Noted in TASK.md's own caveat.
+- The `embedding_dims` env var is silently ignored by SentenceTransformer (model dim is fixed). Not a bug, but documented for future agents.
+
+---
+
 <!-- next-entry -->
 
 ---
