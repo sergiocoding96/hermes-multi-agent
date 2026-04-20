@@ -5,19 +5,21 @@
       "key_hash": "$2b$12$MfdD920/99bnDy5qxXCFCuguoGxdwQBBngtXpatrxoUeP.J7iFKYS",
       "key_prefix": "ak_ab95efcdb",
       "user_id": "ceo",
-      "description": "CEO Agent — Claude Opus 4.6 via Paperclip"
+      "description": "CEO Agent \u2014 Claude Opus 4.6 via Paperclip"
     },
     {
-      "key_hash": "$2b$12$Ona39ojvfwKJlFzFVsk/K.vGh9ZKh3jRjhQWzQHMjUNnaAi.2mye2",
-      "key_prefix": "ak_2ecffb18b",
+      "key_hash": "$2b$12$b.0dqpUDX7TPkHlsMNESsuj4woSSBtVPtLnAJNfWUa4bq3W7aectO",
+      "key_prefix": "ak_ebf6642a9",
       "user_id": "research-agent",
-      "description": "Research Agent — MiniMax M2.7"
+      "description": "Research Agent \u2014 MiniMax M2.7",
+      "rotated_at": "2026-04-20T17:31:22.429682"
     },
     {
-      "key_hash": "$2b$12$Ln390gRoLirJ0bMZ/FjI0ul8hRApS45VvGCG6M8pePDWwVhbc8Ka6",
-      "key_prefix": "ak_6f7cb34e2",
+      "key_hash": "$2b$12$Vn7RnLwLW2Ek5RaFWFP2Du7bILkxHcaoaEv9IWS35nHm5ueQJzHja",
+      "key_prefix": "ak_7b5150be6",
       "user_id": "email-marketing-agent",
-      "description": "Email Marketing Agent — MiniMax M2.7"
+      "description": "Email Marketing Agent \u2014 MiniMax M2.7",
+      "rotated_at": "2026-04-20T17:31:22.715262"
     },
     {
       "key_hash": "$2b$12$cQGcY.AlQtHOShjsTZVyMOEOFv0xuMlKOeVH3PSPoTDUqBrOZVhw.",
