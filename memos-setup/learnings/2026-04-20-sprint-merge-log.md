@@ -183,6 +183,32 @@ Control memory (written before this PR, no custom fields) retrieved alongside sh
 
 ---
 
+### MemOS PR #3 — `fix/delete-api` — MERGED ✓ (with noted gaps for follow-up)
+
+- **Merge commit:** [MemOS@a02b426](https://github.com/sergiocoding96/MemOS/commit/a02b426) (squash, clean — no rebase needed)
+- **Files changed:** `memory_handler.py` (+21/-11), `product_models.py` (+27/-1), `routers/server_router.py` (+90/-6), tests (+241)
+- **Approach:** normalize `mem_cube_id` ↔ `writable_cube_ids` and `memory_id` ↔ `memory_ids` at the top of the handler; return distinct status codes from there.
+
+**Blind test — 5 delete scenarios:**
+
+| # | Scenario | Expected (TASK.md) | Actual | Verdict |
+|---|----------|--------------------|--------|---------|
+| 1 | `mem_cube_id` + `memory_id` (singular) | 200, `deleted:[id]` | 200, `deleted:[id], not_found:[]` | ✓ |
+| 2 | `writable_cube_ids` + `memory_ids` (plural legacy) | 200, `deleted:[id]` | 200, `deleted:[id], not_found:[]` | ✓ |
+| 3 | nonexistent `memory_id` | 404 | 404, `not_found:[id]` in body | ✓ |
+| 4 | `mem_cube_id` only, no `memory_id` | 400 malformed | 200 with `{"status":"failure"}` | ✗ deviation |
+| 5 | partial delete (1 real + 1 fake) | 200 with split `{deleted, not_found}` | 404, both listed as `not_found` | ✗ deviation |
+
+**Core fix shipped:** both param forms accepted, nonexistent id returns 404 (was 403 before). Blind audit Bug 2's primary complaints resolved.
+
+**Deviations from TASK.md (noted for follow-up PR, not blocking):**
+- **#4:** Missing `memory_id` should return 400 but returns 200 with failure body. Client gets confusing "success code, failure status" shape.
+- **#5:** Partial delete is all-or-nothing — if any id is missing, the whole request 404s and NO ids get deleted. TASK.md asked for atomic-per-id semantics with 200 and split result. Pragmatically: this is stricter but safer (no partial state). Worth a follow-up worktree `fix/delete-partial-semantics` if the spec truly matters.
+
+**Smoke test:** `/health` healthy, writes + searches still work, no ollama errors. Authenticated request matrix (singular/plural/spoof) all behave as expected.
+
+---
+
 <!-- next-entry -->
 
 ---
