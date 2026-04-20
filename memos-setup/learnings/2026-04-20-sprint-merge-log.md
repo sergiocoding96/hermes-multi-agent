@@ -209,6 +209,42 @@ Control memory (written before this PR, no custom fields) retrieved alongside sh
 
 ---
 
+### Hermes PR #1 — `memos-provisioning` — MERGED ✓ (with follow-up blocker for PR #3)
+
+- **Merge commit:** [hermes@a417a19](https://github.com/sergiocoding96/hermes-multi-agent/commit/a417a19) (squash)
+- **Files changed:** `.gitignore` (+5), `agents-auth.json` (+8/-9 — rotated bcrypt hashes)
+- **Pre-merge patch:** the PR was cut before `audit-custom-meta-user` was added to the live registry. Merging as-is would have dropped that entry and broken that user's auth. Added a restoration commit on the PR branch ([hermes@cb2e3be](https://github.com/sergiocoding96/hermes-multi-agent/commit/cb2e3be)) so the squashed merge preserves all 4 agents.
+
+**Blind test — 6-case auth/access matrix:**
+
+| # | key / user_id / cube | expectation | actual |
+|---|----------------------|-------------|--------|
+| 1 | CEO key → ceo/ceo-cube | auth + scope | 200 ✓ |
+| 2 | CEO key → research-agent/research-cube | spoof blocked | 403 ✓ (`"Key authenticated as 'ceo' but request claims user_id='research-agent'."`) |
+| 3 | CEO key → ceo/research-cube | cross-read OK (cube shared) | 200 ✓ |
+| 4 | CEO key → ceo/email-mkt-cube | cross-read OK (cube shared) | 200 ✓ |
+| 5 | stale research raw key → research-agent/research-cube | auth fail | 401 (expected) |
+| 6 | stale email raw key → email-marketing-agent/email-mkt-cube | auth fail | 401 (expected) |
+
+**Confirmations:**
+- ✅ New hashes loaded correctly in middleware (spoof-check runs, cache from PR #4 is effective).
+- ✅ `UserManager.share_cube_with_user` succeeded during provisioning — CEO has read access to both research-cube and email-mkt-cube.
+- ✅ Cube isolation intact (auth checks at handler level).
+
+### ⚠️ Blocker for Hermes PR #3
+
+**Raw keys for `research-agent` and `email-marketing-agent` were NOT captured** — the provisioning session rotated keys but lost stdout (no `provisioning-*.log` survived). Profile `.env`s still hold the pre-rotation keys (`ak_c7ca6f…` and `ak_bd0bae…`) which now 401 against the new bcrypt hashes.
+
+Until those keys are re-rotated *with stdout captured* and the raw values written into:
+- `~/.hermes/profiles/research-agent/.env` → `MEMOS_API_KEY=ak_<new>`
+- `~/.hermes/profiles/email-marketing/.env` → `MEMOS_API_KEY=ak_<new>`
+
+…Hermes PR #3 (dual-write) cannot be end-to-end tested for those agents. The `memos-toolset` plugin reads `MEMOS_API_KEY` from env; with a stale value, every write gets 401 and the skill falls back silently per its "best-effort warn" rule.
+
+**Remediation path (planned):** rotate via admin router (`POST /admin/rotate_key`, requires `MEMOS_ADMIN_KEY`) before touching PR #3. Capture raw output to file, then write into each profile's `.env`. Will be handled before/during PR #3 merge.
+
+---
+
 <!-- next-entry -->
 
 ---
