@@ -59,6 +59,101 @@ Flip `deploymentMode` to `"unauthenticated"`. Curls work. Defensible only becaus
 3. **"Agent timed out" has at least three distinct failure modes** — true hang, retry loop, genuine compute bound — distinguishable by whether the run log shows coherent work. Coherent work + timeout = retry loop.
 4. **Process CWD matters.** When a long-lived parent process (Paperclip) is started from a directory that later gets deleted, Python subprocesses (`os.getcwd()`) crash instantly. Always set explicit `adapterConfig.cwd` for subprocess adapters. PR #7 bakes `cwd: $HOME` into both employee configs.
 
+## Findings added during `fix/paperclip-agent-auth` execution (2026-04-21)
+
+Option 1 alone was insufficient. Implementing it surfaced two more adapter bugs
+that were masked by the original auth failure:
+
+### Bug A — `hermes-paperclip-adapter` reads wake context from the wrong object
+
+`hermes-paperclip-adapter/dist/server/execute.js:100-107, 333` reads
+`cfgString(ctx.config?.taskId)` (plus `taskTitle`, `taskBody`, `commentId`,
+`wakeReason`, `companyName`, `projectName`). Paperclip's heartbeat service
+(`@paperclipai/server/dist/services/heartbeat.js:3151-3169`) calls
+`adapter.execute({ runId, agent, runtime, config: runtimeConfig, context, ... })`.
+`runtimeConfig` is the resolved agent config (workspace + skills + env) —
+it does NOT contain wake-context fields. Those live on `context`
+(the `contextSnapshot`).
+
+Concrete evidence: querying
+`GET /api/heartbeat-runs/:runId` on a wake with `wakeReason=issue_assigned`
+returns `contextSnapshot.taskId`, `contextSnapshot.wakeReason`,
+`contextSnapshot.paperclipWake.issue.title` all populated correctly.
+`runtimeConfig` contains none of those keys. So the adapter's `buildPrompt`
+always sees `taskId=""` and renders the `{{#noTask}}` branch of its
+template — regardless of whether Paperclip actually assigned an issue.
+
+Compare with `@paperclipai/adapter-claude-local/dist/server/execute.js:66`:
+that adapter correctly reads `context.taskId` / `context.issueId` /
+`context.paperclipWake`. Only the hermes adapter has this bug.
+
+Fix: the `patch-hermes-adapter.sh` script in this worktree rewrites the 8
+affected reads to `ctx.context?.*` and adds fallbacks to
+`ctx.context.paperclipWake.issue.{id,title,body}` so that taskTitle/taskBody
+populate from the wake payload when the direct fields aren't set.
+
+### Bug B — paperclipai bundles its own copy of `hermes-paperclip-adapter`
+
+`paperclipai` installs a *local copy* of `hermes-paperclip-adapter` inside
+`node_modules/paperclipai/node_modules/hermes-paperclip-adapter/`. When
+`paperclipai run` executes, Node resolves the adapter from that bundled
+copy — the top-level global install at
+`/home/linuxbrew/.linuxbrew/lib/node_modules/hermes-paperclip-adapter/` is
+ignored.
+
+Fix: `patch-hermes-adapter.sh` auto-discovers every
+`*/hermes-paperclip-adapter/dist/server/execute.js` under the npm global
+root and patches all of them. Idempotent via a `patched-by-…-v1` sentinel
+comment.
+
+### Finding C — Paperclip does not auto-transition issues to `done`
+
+After bugs A + B were patched, agents correctly saw their assigned task and
+produced coherent task-specific replies in a single turn (<15 s). Paperclip
+captured the reply as a comment on the issue. BUT the issue did not
+transition to `done` — it went to `blocked` a few minutes later with the
+system comment *"Paperclip automatically retried continuation for this
+assigned in_progress issue after its live execution disappeared, but it
+still has no live execution path."*
+
+Root cause: Paperclip's run-handler sets *the run's* status to `succeeded`,
+not the issue's status. There is no code path in
+`@paperclipai/server/dist/services/heartbeat.js` that transitions an
+issue's `status` field to `"done"` based on adapter stdout. That transition
+is the agent's responsibility — via `PATCH /api/issues/:id` with
+`{"status":"done"}`. That's what the stock adapter prompt's curl step was
+doing.
+
+This contradicts the original premise of this learning doc ("stdout capture
+is the completion mechanism" — point 2 of the "Lessons" section above).
+Revised understanding:
+
+- stdout capture → **issue comment** (yes, automatically).
+- issue status → `done` → **only** via agent self-PATCH, or external
+  reconciliation. No stdout protocol exists for this.
+
+Consequence for TASK.md acceptance criterion 6 — `"issue status transitions
+to done via Paperclip's own run-handler (NOT via agent-initiated API
+call)"`: literally impossible with current Paperclip. The criterion is
+built on an incorrect assumption about Paperclip's behavior.
+
+### Open follow-up (not handled in `fix/paperclip-agent-auth`)
+
+To achieve true end-to-end delegation that leaves the issue in `done`,
+Option 3 from this doc (scoped JWT injection) is the correct fix, plus a
+prompt template that has the agent emit a single final `PATCH
+/issues/:id` call using the injected token. Short-lived (≤ 10 min),
+scoped to `{ agentId, companyId, runId }`. Out of scope for the current
+worktree.
+
+Alternative (less clean): add a server-side reconciler that watches for
+`adapter.exit_code === 0` on an `in_progress` issue with a captured
+comment and auto-transitions the issue to `done`. Would need design review
+with the Paperclip maintainers.
+
 ## Next step
 
-Follow-up worktree `fix/paperclip-agent-auth` implements Option 1. Brief: `scripts/worktrees/migration/fix/paperclip-agent-auth.md`.
+Follow-up worktree `fix/paperclip-agent-auth` implements Option 1 **plus**
+the adapter patch for Bug A (via `patch-hermes-adapter.sh`). Brief:
+`scripts/worktrees/migration/fix/paperclip-agent-auth.md`. Option 3 remains
+open as a separate follow-up.

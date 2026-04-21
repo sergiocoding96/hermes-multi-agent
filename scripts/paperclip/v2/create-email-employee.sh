@@ -28,8 +28,13 @@ AGENT_TITLE="Email Marketing Specialist"
 MODEL="${HERMES_MODEL:-minimax/MiniMax-M2}"
 TOOLSETS="terminal,file,web"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROMPT_TEMPLATE_FILE="${PROMPT_TEMPLATE_FILE:-$SCRIPT_DIR/prompts/hermes-employee.mustache}"
+
 log() { printf '[create-email-employee] %s\n' "$*" >&2; }
 die() { printf '[create-email-employee] ERROR: %s\n' "$*" >&2; exit 1; }
+
+[ -f "$PROMPT_TEMPLATE_FILE" ] || die "Prompt template not found at $PROMPT_TEMPLATE_FILE"
 
 command -v curl >/dev/null || die "curl is required"
 command -v jq   >/dev/null || die "jq is required"
@@ -95,6 +100,7 @@ payload=$(jq -n \
   --arg profile "$PROFILE" \
   --arg toolsets "$TOOLSETS" \
   --arg cwd "$HOME" \
+  --rawfile prompt_template "$PROMPT_TEMPLATE_FILE" \
   --argjson timeout "$TIMEOUT_SEC" \
   --argjson max_turns "$MAX_TURNS" \
   '{
@@ -112,7 +118,8 @@ payload=$(jq -n \
       persistSession: true,
       quiet: true,
       cwd: $cwd,
-      extraArgs: ["-p", $profile]
+      extraArgs: ["-p", $profile],
+      promptTemplate: $prompt_template
     },
     budgetMonthlyCents: 0
   }')
