@@ -469,4 +469,27 @@ Listed roughly highest-ROI to lowest. Spin each up in a new worktree using the s
 - Session committed `INITIATION-PROMPT.md` and `TASK.md` at repo root (worktree artifacts). Cleaned up immediately post-merge with `c28f9a2`.
 - Test seeding used `memos-write.sh` directly instead of `hermes -p research-agent chat` — valid deviation since `wire/paperclip-employees` not yet landed.
 
+---
+
+### PR #7 — Hermes `wire/paperclip-employees` → merged 2026-04-21
+
+**Task:** Create Paperclip employees for research-agent and email-marketing using the built-in `hermes_local` adapter; verify delegation.
+
+**Merge commit:** `521952b` (cleanup commit removed root artifacts + moved FOLLOWUP content to learning doc)
+
+**Acceptance criteria met:**
+- `hermes_local` adapter registered in Paperclip ✅
+- `POST /api/companies/<id>/agents` succeeded (HTTP 201) for both employees ✅
+- Both employees listed in `GET /api/companies/<id>/agents` ✅
+- `adapterConfig.cwd = $HOME` baked in (prevents Python `os.getcwd()` crash) ✅
+- Delegation wakes agents and produces coherent output ✅
+- **Delegation COMPLETES within budget ⚠️ PARTIAL** — agents time out at 600s because the adapter's default prompt instructs them to curl the Paperclip API but no bearer token is injected. Root cause analyzed in [2026-04-21-paperclip-hermes-adapter-auth-gap.md](./2026-04-21-paperclip-hermes-adapter-auth-gap.md). Fix tracked as `fix/paperclip-agent-auth` (Stage 2.5).
+
+**Scripts shipped:** `scripts/paperclip/v2/create-research-employee.sh`, `scripts/paperclip/v2/create-email-employee.sh`, `scripts/paperclip/v2/README.md`; archived `install-hermes-adapter.sh` into `_archive/`.
+
+**Deviations / surprises:**
+- Session committed `INITIATION-PROMPT.md`, `TASK.md`, and `FOLLOWUP.md` at repo root — all cleaned up post-merge. FOLLOWUP technical content promoted to [2026-04-21-paperclip-hermes-adapter-auth-gap.md](./2026-04-21-paperclip-hermes-adapter-auth-gap.md).
+- **SECURITY:** FOLLOWUP.md leaked a live Paperclip board API token (`pcp_board_b3cbbf04...`) into a code example. The token is in git history of PR #7. **Must be rotated.**
+- Paperclip was running from a since-deleted worktree CWD — caused Python `os.getcwd()` crashes on every Hermes spawn until `adapterConfig.cwd = $HOME` was set. The Paperclip server itself should also be restarted from a stable directory.
+
 After any new sprint, append a new dated log in `memos-setup/learnings/` and re-score the same areas against this document's numbers.

@@ -65,6 +65,14 @@ Only starts after Stage 1 green. Each is independent and can run in parallel.
 | `wire/ceo-hub-access` | Claude Code CEO can read/write hub. Option 1 (bash curl) minimum; Option 2 (MCP wrapper) if time allows. |
 | `wire/badass-skills-groundtruth` | Symlink `~/Coding/badass-skills/*` into `~/.claude/skills/`. Configure plugin skill-output directory to write into `~/Coding/badass-skills/`. Verify both runtimes (Hermes + Claude Code) see the same skills. |
 
+### Stage 2.5 — Fix adapter auth gap discovered in Stage 2 (single worktree, blocks end-to-end validation)
+
+Added post-hoc after Stage 2 merge. PR #7 shipped the employee wiring but delegation times out at 600s because the `hermes_local` adapter's default prompt tells agents to curl the Paperclip API and no bearer token is injected. Full analysis in [2026-04-21-paperclip-hermes-adapter-auth-gap.md](./2026-04-21-paperclip-hermes-adapter-auth-gap.md).
+
+| Worktree | Scope |
+|----------|-------|
+| `fix/paperclip-agent-auth` | Override `adapterConfig.promptTemplate` per Hermes employee so the agent's stdout is the completion — no API callbacks, no bearer tokens, no upstream patches. Full brief: [paperclip-agent-auth.md](../../scripts/worktrees/migration/fix/paperclip-agent-auth.md). Completion criterion: delegation smoke test passes in < 60s with zero 401s in the run log. |
+
 ### Stage 3 — Write the v2 audit suite (single worktree)
 
 | Worktree | Scope |
