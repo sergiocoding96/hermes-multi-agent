@@ -65,13 +65,101 @@ PAPERCLIP_BOARD_TOKEN="$PAPERCLIP_BOARD_TOKEN" ./create-research-employee.sh
 
 # Create email-marketing-agent employee (idempotent — safe to re-run)
 PAPERCLIP_BOARD_TOKEN="$PAPERCLIP_BOARD_TOKEN" ./create-email-employee.sh
+
+# Apply the stdout-completion prompt override to every existing hermes_local
+# employee. Required for agents that were created *before* the template was
+# wired into the create-* scripts; harmless no-op for ones created after.
+PAPERCLIP_BOARD_TOKEN="$PAPERCLIP_BOARD_TOKEN" ./apply-prompt-override.sh
 ```
 
-Both scripts:
+Both `create-*` scripts:
 - Verify `hermes_local` is registered before doing anything
 - Check that the target Hermes profile exists
 - Skip creation if an agent using that profile already exists in the company
+- Embed `adapterConfig.promptTemplate` from `prompts/hermes-employee.mustache`
+  so fresh installs ship with the stdout-completion template from day one
 - Print the resulting agent JSON on success
+
+`apply-prompt-override.sh`:
+- Reads the template from `prompts/hermes-employee.mustache` so the DB always
+  matches the committed source file.
+- GETs every `hermes_local` agent in the company, compares each agent's
+  current `adapterConfig.promptTemplate` to the on-disk template, skips if
+  they already match (re-running is a no-op).
+- Otherwise PATCHes `/api/agents/:id` with a partial `adapterConfig`. Paperclip
+  merges partial `adapterConfig` updates by default (no `replaceAdapterConfig`
+  flag), so every other adapterConfig field is preserved.
+- Verifies the PATCH response contains the expected template before counting
+  the agent as updated.
+
+## Why the prompt template override matters
+
+The `hermes_local` adapter's default prompt template (`DEFAULT_PROMPT_TEMPLATE`
+in `hermes-paperclip-adapter/dist/server/execute.js`) was written assuming
+Paperclip runs in `"local_trusted"` deployment mode: it instructs the agent
+to `curl -X PATCH "$PAPERCLIP_API_URL/issues/<id>" -d '{"status":"done"}'`
+to complete an issue.
+
+Our Paperclip is configured with `deploymentMode: "authenticated"`. The
+adapter spawns Hermes as a subprocess but does not inject a bearer token
+into its env — the agent's curls return HTTP 401 `Board access required`,
+and a well-behaved retry loop burns the entire turn budget before timing out
+at 600 s.
+
+The override prompt at `prompts/hermes-employee.mustache` removes all
+Paperclip-API callback instructions. The agent is told explicitly that:
+
+- its final stdout message IS the completion (the adapter already captures
+  stdout — see `execute.js:388-416`),
+- Paperclip's run-handler stores that message and transitions the issue to
+  `done` without any agent-initiated API call,
+- any `curl` against the Paperclip API will fail 401 and must be avoided.
+
+See [`memos-setup/learnings/2026-04-21-paperclip-hermes-adapter-auth-gap.md`](../../../memos-setup/learnings/2026-04-21-paperclip-hermes-adapter-auth-gap.md)
+for the full analysis and rejected alternatives (token injection, scoped
+JWT, deployment-mode flip).
+
+## Delegation smoke test (validates the override end-to-end)
+
+```bash
+PAPERCLIP_URL="http://localhost:3100"
+COMPANY_ID="a5e49b0d-bd58-4239-b139-435046e9ab91"
+TS=$(date +%s)
+MARKER="FIX-AGENT-AUTH-$TS"
+
+# Locate both employees by profile name
+RESEARCH_AGENT_ID=$(curl -s "$PAPERCLIP_URL/api/companies/$COMPANY_ID/agents" \
+  -H "Authorization: Bearer $PAPERCLIP_BOARD_TOKEN" \
+  | jq -r '[.[] | select(.adapterType=="hermes_local" and (.adapterConfig.extraArgs|join(" ")|contains("research-agent")))][0].id')
+EMAIL_AGENT_ID=$(curl -s "$PAPERCLIP_URL/api/companies/$COMPANY_ID/agents" \
+  -H "Authorization: Bearer $PAPERCLIP_BOARD_TOKEN" \
+  | jq -r '[.[] | select(.adapterType=="hermes_local" and (.adapterConfig.extraArgs|join(" ")|contains("email-marketing")))][0].id')
+
+# Assign a trivial task to each
+for pair in "$RESEARCH_AGENT_ID:HTTP status codes one-sentence summary" \
+            "$EMAIL_AGENT_ID:one-sentence subject-line tip for a cold outreach email"; do
+  aid="${pair%%:*}"; title="${pair#*:}"
+  curl -sf -X POST "$PAPERCLIP_URL/api/companies/$COMPANY_ID/issues" \
+    -H "Authorization: Bearer $PAPERCLIP_BOARD_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"title\":\"$MARKER: $title\",\"assigneeAgentId\":\"$aid\",\"status\":\"todo\",\"priority\":\"high\"}"
+done
+
+# Wait up to 90s, then check status + run logs
+sleep 90
+curl -sf "$PAPERCLIP_URL/api/issues?q=$MARKER" \
+  -H "Authorization: Bearer $PAPERCLIP_BOARD_TOKEN" \
+  | jq '.[] | {title, status, assigneeAgentId, completedAt}'
+
+# Expect: both issues status=="done", completedAt set, zero 401s in run logs.
+```
+
+Pass criteria:
+
+- Both issues transition to `done` within 60 s of assignment.
+- Each run log contains zero occurrences of `401` / `Board access required`.
+- Each agent completes in `< 5` turns.
+- The captured completion message is coherent and directly answers the task.
 
 ## Verifying end to end
 
