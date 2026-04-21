@@ -148,11 +148,20 @@ If at any stage the migration proves unworkable:
 4. Write a post-mortem at `memos-setup/learnings/2026-04-XX-migration-abort.md` with findings.
 5. No data loss — the MemOS server's Qdrant + Neo4j + SQLite were never deleted.
 
-## Open questions (resolve before start)
+## Open questions (resolved during gate — 2026-04-21)
 
-- [ ] Which embedding provider does the plugin use? Default is local Xenova (all-MiniLM-L6-v2, 384d) which matches our current setup. Confirm during gate worktree.
-- [ ] Which summarizer model? Default is OpenAI-compatible. Point at DeepSeek V3 to match our existing MEMRADER config.
-- [ ] Hub port choice: plugin defaults to 18992. Confirm no conflict with existing ports.
-- [ ] Skill output directory: plugin default vs. `~/Coding/badass-skills/`. Needs config field in the plugin.
+- [x] **Embedding provider:** Xenova all-MiniLM-L6-v2 (local, 384d) — matches Sprint 1 setup.
+- [x] **Summarizer model:** DeepSeek V3 via `openai_compatible` — reuses Sprint 1's MEMRADER key.
+- [x] **Hub port:** `18992` free. *Important:* plugin's native default has `18992` = bridge daemon, hub = derived (`19003`). Gate overrides so hub = `18992`, daemon = `18990`, viewer = `18901`. All Stage 2 worktrees inherit this via `scripts/migration/bootstrap-hub.sh`.
+- [x] **Skill output dir:** plugin writes to `stateDir/skills-store/` by default. Install-into-`~/Coding/badass-skills/` is `wire/badass-skills-groundtruth` scope.
 
-The gate worktree resolves all four.
+## Gate findings that Stage 2+ sessions must know
+
+The gate worktree (PR #4, commit [48f04f4](https://github.com/sergiocoding96/hermes-multi-agent/commit/48f04f4)) surfaced four things that were unknown when the plan was written. See the sprint merge log entry for full detail — summary:
+
+1. **`bridge.cts --daemon` does NOT start HubServer.** The hub is only wired by the plugin's OpenHarness entry in `index.ts`. Use `scripts/migration/hub-launcher.cts` (shipped by gate) to instantiate HubServer directly.
+2. **Port layout** — see Open Questions above. Canonical mapping lives in `scripts/migration/bootstrap-hub.sh`.
+3. **Hub has no `/health` route.** Liveness probe = `GET /api/v1/hub/info` (200 + JSON, no auth).
+4. **Node constraint `>=18 <25`.** `install-plugin.sh` detects and picks the right binary; don't override with Linuxbrew Node 25 on `$PATH`.
+
+Any Stage 2 worktree that touches the hub or plugin should read these before coding to avoid re-discovery cost.

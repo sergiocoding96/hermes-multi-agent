@@ -310,6 +310,64 @@ Confirmations compounding across the sprint's fixes:
 
 ---
 
+---
+
+## Sprint 2 — Migration to memos-local-hermes-plugin
+
+### Sprint 2 PR #4 — `feat/migrate-setup` — MERGED ✓ (gate passed)
+
+- **Merge commit:** [hermes@48f04f4](https://github.com/sergiocoding96/hermes-multi-agent/commit/48f04f4) (squash)
+- **Gate report:** [memos-setup/learnings/2026-04-20-gate-report.md](./2026-04-20-gate-report.md) (268 lines, per-probe raw evidence)
+- **Files added/changed:** 4 new files — `scripts/migration/install-plugin.sh`, `scripts/migration/bootstrap-hub.sh`, `scripts/migration/hub-launcher.cts`, gate report. Product-1 memory code archived (not deleted): `deploy/plugins/memos-toolset/` → `_archive/`, `agents-auth.json.archived`, `setup-memos-agents.py.archived`.
+
+**5 smoke probes — all pass with raw evidence:**
+
+| # | Probe | Result | Evidence |
+|---|-------|--------|----------|
+| 1 | Plugin installs cleanly | ✅ | exit 0, installed at `~/.hermes/memos-plugin-research-agent/`, Node 22 + npm 10 + Bun 1.3 verified |
+| 2 | Hub starts healthy | ✅ | `GET /api/v1/hub/info` returns 200 `{teamName:"ceo-team", hubInstanceId:"527c69b8-..."}`, admin token 0600 at `secrets/hub-admin-token` |
+| 3 | Auto-capture | ✅ | 3 chunks in SQLite with marker `GATE-1776722099` verbatim — no explicit memory-tool calls |
+| 4 | Search retrieves | ✅ | hitCount=3, topScore=1.0, marker in all 3 top excerpts |
+| 5 | Skill evolution | ✅ | `csv-file-preview-function-development/SKILL.md` 5 KB, YAML frontmatter, 5 ordered steps with code |
+
+### Key findings surfaced by this gate (Stage 2+ sessions take note)
+
+These are corrections/clarifications to assumptions baked into `2026-04-20-v2-migration-plan.md`. Future Sprint 2 sessions inherit them:
+
+1. **`bridge.cts --daemon` does NOT start HubServer.** The hub is only wired by the plugin's OpenHarness entry in `index.ts`. The gate worktree shipped `scripts/migration/hub-launcher.cts` which instantiates `HubServer` directly. Use that launcher, not `bridge.cts --daemon`, when starting the hub.
+2. **Port layout is inverted from what the master plan assumed.** Plugin defaults: `18992` = bridge daemon (JSON-RPC), `18901` = viewer, hub port is derived (`daemonPort + 11 = 19003`) unless overridden. `bootstrap-hub.sh` overrides `sharing.hub.port=18992` to match what downstream worktrees expect; bridge daemon is moved to `18990`. Any Stage 2 worktree pointing at a port should read `bootstrap-hub.sh` for the canonical mapping.
+3. **Hub has no `/health` endpoint.** `GET /api/v1/hub/info` is the de-facto liveness probe (200 + JSON, no auth required).
+4. **Node constraint is `>=18 <25`.** apt's `/usr/bin/node` v22 works. Linuxbrew Node 25 (currently default on `$PATH`) does not. `install-plugin.sh` detects and uses the correct binary.
+5. **LLM topic classifier (DeepSeek V3) is conservative.** During gate Probe 5, it judged all CSV follow-ups as `SAME`. Gate used session-key change instead to force task finalization. Realistic — but Stage 4's `skill-evolution-v2` audit should probe whether this produces under-split tasks in real use.
+6. **Gate Probes 3/4/5 drove plugin-internal APIs directly**, not via `hermes chat`. This is the same code path the Hermes adapter hits via JSON-RPC `ingest`. Stage 2's `wire/paperclip-employees` worktree is the scope for end-to-end `hermes -p research-agent chat -q ...` via adapter.
+
+### Open questions from the master plan — resolved
+
+| Question | Answer |
+|----------|--------|
+| Embedding provider | Xenova all-MiniLM-L6-v2 (local, 384d) — matches Sprint 1 |
+| Summarizer | DeepSeek V3 via `openai_compatible` — reuses Sprint 1's MEMRADER key |
+| Hub port conflict | 18992 free |
+| Skill output dir | `stateDir/skills-store/` by default — install-to-workspace is `wire/badass-skills-groundtruth` scope |
+
+### Follow-ups (not blocking, catalogued for future work)
+
+- Upstream request to MemTensor: add `/health` to HubServer router
+- Track Node-25 prebuild gap for `better-sqlite3`
+- Optional CLI `memos finalize-task` — Stage 5 polish
+- Investigate DeepSeek V3 topic-classifier conservatism via Stage 4 audit
+
+### Status
+
+**Stage 1 GATE PASSED.** Stage 2 (3 parallel worktrees) is unblocked:
+- `wire/paperclip-employees`
+- `wire/ceo-hub-access`
+- `wire/badass-skills-groundtruth`
+
+Launch them in parallel Claude Code Desktop sessions. Each inherits the port layout + hub-launcher finding from this entry.
+
+---
+
 <!-- next-entry -->
 
 ---
