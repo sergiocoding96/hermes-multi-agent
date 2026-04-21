@@ -1,0 +1,2 @@
+# Allow requirements.txt (root gitignore blocks *.txt globally)
+!requirements.txt
