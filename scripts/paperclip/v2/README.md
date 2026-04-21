@@ -61,15 +61,31 @@ Add to `~/.hermes/.env` or your shell profile if you want it persistent.
 cd scripts/paperclip/v2
 
 # ── One-time: patch the bundled hermes-paperclip-adapter ──────────────────
-# Auto-discovers every copy of hermes-paperclip-adapter/dist/server/execute.js
-# under the npm global root and rewrites its wake-context reads from
-# ctx.config.* to ctx.context.* (see "Why the adapter patch" below).
-# Idempotent; no-ops on re-run.
+# Two idempotent patches, both auto-discovering every copy of
+# hermes-paperclip-adapter/dist/server/execute.js under the npm global root:
+#
+#   1. patch-hermes-adapter.sh      — fixes the wake-context read bug so
+#                                     agents actually see their assigned task
+#                                     (see "Why the adapter patch").
+#
+#   2. patch-hermes-adapter-jwt.sh  — propagates the per-run scoped JWT
+#                                     Paperclip already mints (as
+#                                     `ctx.authToken`) into the subprocess
+#                                     env as `PAPERCLIP_AGENT_JWT`, so the
+#                                     agent can PATCH its issue to done on
+#                                     completion (see "Why the JWT patch").
 #
 # IMPORTANT: restart paperclipai afterwards — Node caches modules in-memory.
 ./patch-hermes-adapter.sh
+./patch-hermes-adapter-jwt.sh
 
-# Then restart Paperclip so the patched module is reloaded:
+# Optional but recommended: shorten the per-run JWT TTL from the 48h default
+# to 10 minutes. The token is already scoped to {agent, company, run}; a
+# short TTL limits the blast radius if a subprocess log leaks it.
+#   grep -q '^PAPERCLIP_AGENT_JWT_TTL_SECONDS=' ~/.paperclip/instances/default/.env \
+#     || printf '\nPAPERCLIP_AGENT_JWT_TTL_SECONDS=600\n' >> ~/.paperclip/instances/default/.env
+
+# Then restart Paperclip so the patched module + env are reloaded:
 source ~/.paperclip/instances/default/.env
 pkill -TERM -f 'node .*paperclipai run' && sleep 2
 nohup paperclipai run > ~/.paperclip/instances/default/logs/server.log 2>&1 &
@@ -132,32 +148,60 @@ copy is a no-op. Idempotency is enforced via a sentinel comment; every
 patched file gets a timestamped `.orig-YYYYMMDD-HHMMSS` backup for easy
 revert.
 
-## Why the prompt template override matters
+## Why the JWT patch
 
-The `hermes_local` adapter's default prompt template (`DEFAULT_PROMPT_TEMPLATE`
-in `hermes-paperclip-adapter/dist/server/execute.js`) was written assuming
-Paperclip runs in `"local_trusted"` deployment mode: it instructs the agent
-to `curl -X PATCH "$PAPERCLIP_API_URL/issues/<id>" -d '{"status":"done"}'`
-to complete an issue.
+Paperclip's heartbeat service (`@paperclipai/server/dist/services/heartbeat.js`)
+already mints a short-lived, HS256-signed, per-run JWT for every adapter whose
+registry entry has `supportsLocalAgentJwt: true` — and `hermes_local` is one
+of them. The token is produced by
+`createLocalAgentJwt(agentId, companyId, adapterType, runId)` and passed to
+the adapter's `execute()` function as `ctx.authToken`. Claims:
 
-Our Paperclip is configured with `deploymentMode: "authenticated"`. The
-adapter spawns Hermes as a subprocess but does not inject a bearer token
-into its env — the agent's curls return HTTP 401 `Board access required`,
-and a well-behaved retry loop burns the entire turn budget before timing out
-at 600 s.
+```
+{ sub: <agentId>, company_id, adapter_type, run_id,
+  iat, exp, iss: "paperclip", aud: "paperclip-api" }        // HS256
+```
 
-The override prompt at `prompts/hermes-employee.mustache` removes all
-Paperclip-API callback instructions. The agent is told explicitly that:
+The Paperclip auth middleware (`@paperclipai/server/dist/middleware/auth.js`)
+verifies this token on every request via `verifyLocalAgentJwt()` and sets
+`req.actor = { type: "agent", agentId, companyId, runId }`. Authorization is
+scoped by that actor — an agent JWT can only touch its own agent/company.
 
-- its final stdout message IS the completion (the adapter already captures
-  stdout — see `execute.js:388-416`),
-- Paperclip's run-handler stores that message and transitions the issue to
-  `done` without any agent-initiated API call,
-- any `curl` against the Paperclip API will fail 401 and must be avoided.
+The reference adapter `@paperclipai/adapter-claude-local` reads
+`ctx.authToken` and exports it as `PAPERCLIP_API_KEY` in the subprocess env.
+The hermes adapter (through v2026.416.0) simply ignores that field. That is
+why agents had no way to self-transition issues to `done` and Paperclip's
+reconciler kept demoting them to `blocked`.
 
-See [`memos-setup/learnings/2026-04-21-paperclip-hermes-adapter-auth-gap.md`](../../../memos-setup/learnings/2026-04-21-paperclip-hermes-adapter-auth-gap.md)
-for the full analysis and rejected alternatives (token injection, scoped
-JWT, deployment-mode flip).
+`patch-hermes-adapter-jwt.sh` adds one block after the existing
+`PAPERCLIP_RUN_ID` injection in `execute.js`:
+
+```js
+if (typeof ctx.authToken === "string" && ctx.authToken.length > 0)
+    env.PAPERCLIP_AGENT_JWT = ctx.authToken;
+```
+
+The prompt template at `prompts/hermes-employee.mustache` instructs the agent
+to issue exactly one `PATCH /api/issues/:id -d '{"status":"done"}'` with that
+bearer as the final step. Stdout capture still handles the issue comment —
+only the status transition now requires auth.
+
+### Why not mint our own token in the adapter
+
+An earlier plan (see
+[`2026-04-21-paperclip-hermes-adapter-auth-gap.md`](../../../memos-setup/learnings/2026-04-21-paperclip-hermes-adapter-auth-gap.md),
+"Option 3") was to sign a fresh JWT inside `buildPaperclipEnv()`. That would
+duplicate the signing logic already present upstream and drift from its claim
+shape. Paperclip's mint is authoritative — we propagate it.
+
+### TTL tuning
+
+TASK.md asks for `exp ≤ 10 minutes`. Upstream default is 48h (see
+`PAPERCLIP_AGENT_JWT_TTL_SECONDS` in
+`@paperclipai/server/dist/agent-auth-jwt.js`). Set that env var to `600` on
+the Paperclip process to meet the per-run scope (the snippet in "Run order"
+does this). The agent only needs the token for ~15s, so 10 minutes is a
+safe upper bound.
 
 ## Delegation smoke test (validates the override end-to-end)
 
@@ -194,25 +238,15 @@ curl -sf "$PAPERCLIP_URL/api/issues?q=$MARKER" \
 # Expect: both issues status=="done", completedAt set, zero 401s in run logs.
 ```
 
-Pass criteria (revised after end-to-end testing — see
-[`2026-04-21-paperclip-hermes-adapter-auth-gap.md`](../../../memos-setup/learnings/2026-04-21-paperclip-hermes-adapter-auth-gap.md)
-"Finding C"):
+Pass criteria:
 
-- Each run log contains zero real HTTP 401 / `Board access required` responses.
+- Each run log contains zero HTTP 401 / `Board access required` responses.
 - Each agent completes in `< 5` turns.
 - The captured completion message (persisted as an issue comment) is
   coherent and directly answers the assigned task.
 - Run status `succeeded` within 60 s.
-
-**Known limitation:** the issue status does NOT transition to `done`. It
-goes to `blocked` a few minutes after the run completes, via Paperclip's
-stranded-issue reconciler. Paperclip's run-handler does not auto-transition
-issues to `done` from adapter stdout — that transition is only triggered
-by an agent-initiated `PATCH /api/issues/:id` (or by a human / reconciler).
-The stock adapter prompt did this via curl, but our override removes curls
-to avoid the 401 loop. Closing this gap cleanly requires Option 3 from the
-learnings doc (scoped JWT injection + a prompt step that PATCHes with the
-injected token) — tracked as a follow-up; out of scope for this PR.
+- Issue status transitions to `done` within 60 s (via the agent's one
+  `PATCH /api/issues/:id` using `$PAPERCLIP_AGENT_JWT`).
 
 ## Verifying end to end
 
