@@ -425,4 +425,25 @@ Listed roughly highest-ROI to lowest. Spin each up in a new worktree using the s
 9. **`feat/soft-loop`** (Hermes) — CEO HEARTBEAT → skill patch loop.
 10. **`feat/hard-loop`** (Hermes) — quality_score auto-patch.
 
+---
+
+## Sprint 2 — Migration to memos-local-hermes-plugin
+
+### PR #5 — Hermes `wire/badass-skills-groundtruth` → merged 2026-04-21
+
+**Task:** Wire `~/Coding/badass-skills/` as shared skill ground truth for Hermes workers, Claude Code CEO, and MemOS plugin output.
+
+**Merge commit:** `34c9979`
+
+**Acceptance criteria met:**
+- AC1 ✅ `~/.claude/skills/` symlinks → gemini-video, notebooklm, pdf, auto
+- AC2 ✅ `~/.hermes/memos-state-research-agent/skills-store` → `~/Coding/badass-skills/auto/`
+- AC3 ✅ (directory state correct; fresh-session `/skills list` left for human verification)
+- AC4 ✅ Hermes regression check clean — all 3 badass-skills visible under "Plus:"
+- AC5 ✅ All 3 hand-authored skills have valid YAML frontmatter, dual-compatible
+
+**Scripts shipped:** `scripts/migration/symlink-badass-skills.sh`, `scripts/migration/configure-plugin-skill-output.sh` (both idempotent)
+
+**Deviations / surprises:** None. Note: `auto/` gets double-symlinked into `~/.claude/skills/auto` as a side effect of symlink-badass-skills.sh — intentional, plugin-generated skills visible to Claude Code.
+
 After any new sprint, append a new dated log in `memos-setup/learnings/` and re-score the same areas against this document's numbers.
