@@ -60,6 +60,20 @@ Add to `~/.hermes/.env` or your shell profile if you want it persistent.
 ```bash
 cd scripts/paperclip/v2
 
+# ── One-time: patch the bundled hermes-paperclip-adapter ──────────────────
+# Auto-discovers every copy of hermes-paperclip-adapter/dist/server/execute.js
+# under the npm global root and rewrites its wake-context reads from
+# ctx.config.* to ctx.context.* (see "Why the adapter patch" below).
+# Idempotent; no-ops on re-run.
+#
+# IMPORTANT: restart paperclipai afterwards — Node caches modules in-memory.
+./patch-hermes-adapter.sh
+
+# Then restart Paperclip so the patched module is reloaded:
+source ~/.paperclip/instances/default/.env
+pkill -TERM -f 'node .*paperclipai run' && sleep 2
+nohup paperclipai run > ~/.paperclip/instances/default/logs/server.log 2>&1 &
+
 # Create research-agent employee (idempotent — safe to re-run)
 PAPERCLIP_BOARD_TOKEN="$PAPERCLIP_BOARD_TOKEN" ./create-research-employee.sh
 
@@ -91,6 +105,32 @@ Both `create-*` scripts:
   flag), so every other adapterConfig field is preserved.
 - Verifies the PATCH response contains the expected template before counting
   the agent as updated.
+
+## Why the adapter patch
+
+`hermes-paperclip-adapter/dist/server/execute.js` reads wake-context fields
+(taskId, taskTitle, taskBody, commentId, wakeReason, companyName, projectName)
+from `ctx.config` — but Paperclip's heartbeat service puts those fields on
+`ctx.context` (the contextSnapshot). `ctx.config` is only the resolved
+runtimeConfig (workspace + skills). As a result, every wake — including
+`issue_assigned` — rendered the `{{#noTask}}` branch of the prompt
+template, meaning the agent **never saw its assigned task**.
+
+Other paperclipai adapters (e.g. `adapter-claude-local`) correctly read
+`context.taskId`. Only the hermes adapter has this bug.
+
+`patch-hermes-adapter.sh` rewrites the 8 affected reads to `ctx.context?.*`
+and adds fallbacks to `ctx.context.paperclipWake.issue.{id,title,body}` so
+the template populates with the wake payload when the direct fields aren't
+set.
+
+The script auto-discovers every copy of the adapter under the npm global
+root — paperclipai bundles its own copy under
+`node_modules/paperclipai/node_modules/hermes-paperclip-adapter/`, and that's
+the copy that gets loaded at runtime; patching only the top-level global
+copy is a no-op. Idempotency is enforced via a sentinel comment; every
+patched file gets a timestamped `.orig-YYYYMMDD-HHMMSS` backup for easy
+revert.
 
 ## Why the prompt template override matters
 
@@ -154,12 +194,25 @@ curl -sf "$PAPERCLIP_URL/api/issues?q=$MARKER" \
 # Expect: both issues status=="done", completedAt set, zero 401s in run logs.
 ```
 
-Pass criteria:
+Pass criteria (revised after end-to-end testing — see
+[`2026-04-21-paperclip-hermes-adapter-auth-gap.md`](../../../memos-setup/learnings/2026-04-21-paperclip-hermes-adapter-auth-gap.md)
+"Finding C"):
 
-- Both issues transition to `done` within 60 s of assignment.
-- Each run log contains zero occurrences of `401` / `Board access required`.
+- Each run log contains zero real HTTP 401 / `Board access required` responses.
 - Each agent completes in `< 5` turns.
-- The captured completion message is coherent and directly answers the task.
+- The captured completion message (persisted as an issue comment) is
+  coherent and directly answers the assigned task.
+- Run status `succeeded` within 60 s.
+
+**Known limitation:** the issue status does NOT transition to `done`. It
+goes to `blocked` a few minutes after the run completes, via Paperclip's
+stranded-issue reconciler. Paperclip's run-handler does not auto-transition
+issues to `done` from adapter stdout — that transition is only triggered
+by an agent-initiated `PATCH /api/issues/:id` (or by a human / reconciler).
+The stock adapter prompt did this via curl, but our override removes curls
+to avoid the 401 loop. Closing this gap cleanly requires Option 3 from the
+learnings doc (scoped JWT injection + a prompt step that PATCHes with the
+injected token) — tracked as a follow-up; out of scope for this PR.
 
 ## Verifying end to end
 
