@@ -175,6 +175,16 @@ skills here; note them in the skill's SKILL.md header instead.
 4. No further configuration needed — the plugin picks up `stateDir/skills-store`
    which now resolves to `~/Coding/badass-skills/auto/`.
 
+## Ops Invariants
+
+These must be re-run on specific events to keep the stack healthy.
+
+| Event | Action | Script |
+|-------|--------|--------|
+| `npm update paperclipai` (or any version bump of `paperclipai`) | Re-patch bundled `hermes-paperclip-adapter` (fixes `ctx.config` → `ctx.context` bug). Script is idempotent — safe to run defensively. | `scripts/paperclip/v2/patch-hermes-adapter.sh` |
+| Paperclip restart | After any Paperclip restart, verify `~/.paperclip/instances/default/config.json` still has `deploymentMode: "authenticated"`. Safer to launch from a stable CWD (e.g. `cd ~ && paperclipai run`) — inheriting a worktree CWD that later gets deleted breaks Python subprocesses via `os.getcwd()`. | manual check |
+| New Hermes profile added | Run `scripts/paperclip/v2/apply-prompt-override.sh` so the new employee inherits the stdout-completion prompt. Run `scripts/paperclip/v2/patch-hermes-adapter.sh` only if adapter was reinstalled. | both above |
+
 ## Related Repos
 
 | Repo | Purpose |

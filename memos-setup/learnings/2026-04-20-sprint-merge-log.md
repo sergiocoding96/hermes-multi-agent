@@ -492,4 +492,33 @@ Listed roughly highest-ROI to lowest. Spin each up in a new worktree using the s
 - **SECURITY:** FOLLOWUP.md leaked a live Paperclip board API token (`pcp_board_b3cbbf04...`) into a code example. The token is in git history of PR #7. **Must be rotated.**
 - Paperclip was running from a since-deleted worktree CWD — caused Python `os.getcwd()` crashes on every Hermes spawn until `adapterConfig.cwd = $HOME` was set. The Paperclip server itself should also be restarted from a stable directory.
 
+---
+
+### PR #8 — Hermes `fix/paperclip-agent-auth` → merged 2026-04-21
+
+**Task (Stage 2.5):** Override the `hermes_local` prompt template so agents complete via stdout without calling the Paperclip API.
+
+**Merge commit:** `f81f467`
+
+**Acceptance criteria met:**
+- Prompt template at `scripts/paperclip/v2/prompts/hermes-employee.mustache`, no curls, conditionals preserved ✅
+- `apply-prompt-override.sh` idempotent (REST PATCH substitute for psql+jsonb_set since embedded-pg has no psql) ✅
+- `create-*-employee.sh` embed template in payload for fresh installs ✅
+- Delegation smoke test: both agents produce task-specific coherent replies in single turn (<15s), zero HTTP 401 in run logs ✅
+- **AC6 (issue status → done via run-handler) ❌** — criterion premise was incorrect. Paperclip's run-handler never transitions issue status; requires agent self-PATCH. Tracked as Stage 2.6 `fix/paperclip-scoped-jwt`.
+
+**Scripts shipped:** `prompts/hermes-employee.mustache`, `apply-prompt-override.sh`, `patch-hermes-adapter.sh` (scope expansion).
+
+**Scope deviations (both justified):**
+1. **REST PATCH instead of psql UPDATE** — embedded-postgres bundle ships no `psql` binary. Route mutates the same field through validated code.
+2. **Scope expanded to patch `hermes-paperclip-adapter`** — originally forbidden by TASK.md. Required because Option 1 alone couldn't work (see three findings below).
+
+**Three architectural findings documented in [2026-04-21-paperclip-hermes-adapter-auth-gap.md](./2026-04-21-paperclip-hermes-adapter-auth-gap.md):**
+
+- **Bug A:** `hermes-paperclip-adapter/dist/server/execute.js` reads wake context from `ctx.config?.*` instead of `ctx.context?.*`. Paperclip puts wake context (`taskId`, `taskTitle`, `paperclipWake`) on `context`, not `runtimeConfig`. Consequence: every wake rendered the `{{#noTask}}` branch, agents never saw their assigned task. Fixed by `patch-hermes-adapter.sh`.
+- **Bug B:** `paperclipai` bundles its own copy of `hermes-paperclip-adapter` under `node_modules/paperclipai/node_modules/`. That bundled copy is what Node actually loads — patching only the top-level global install is a runtime no-op. Patch script auto-discovers and patches both.
+- **Finding C:** Paperclip's heartbeat/run-handler never transitions issue status to `"done"`. The adapter captures stdout as an issue comment, but the issue's own status field is never written by any code path in `@paperclipai/server/dist/services/heartbeat.js`. Status transition requires agent self-PATCH — which requires auth, which requires Option 3 (scoped JWT). Without that, successful runs leave issues in `in_progress` → `blocked` (via reconciler).
+
+**Ops invariant created:** any `npm update paperclipai` requires re-running `scripts/paperclip/v2/patch-hermes-adapter.sh` (idempotent — safe to run defensively post-upgrade).
+
 After any new sprint, append a new dated log in `memos-setup/learnings/` and re-score the same areas against this document's numbers.

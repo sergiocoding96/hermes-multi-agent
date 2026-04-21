@@ -71,7 +71,15 @@ Added post-hoc after Stage 2 merge. PR #7 shipped the employee wiring but delega
 
 | Worktree | Scope |
 |----------|-------|
-| `fix/paperclip-agent-auth` | Override `adapterConfig.promptTemplate` per Hermes employee so the agent's stdout is the completion — no API callbacks, no bearer tokens, no upstream patches. Full brief: [paperclip-agent-auth.md](../../scripts/worktrees/migration/fix/paperclip-agent-auth.md). Completion criterion: delegation smoke test passes in < 60s with zero 401s in the run log. |
+| `fix/paperclip-agent-auth` | Override `adapterConfig.promptTemplate` per Hermes employee so the agent's stdout is the completion — no API callbacks, no bearer tokens, no upstream patches. Full brief: [paperclip-agent-auth.md](../../scripts/worktrees/migration/fix/paperclip-agent-auth.md). Completion criterion: delegation smoke test passes in < 60s with zero 401s in the run log. → **Merged as PR #8 (`f81f467`) with scope expansion to patch `hermes-paperclip-adapter` (Bugs A+B).** Finding C surfaced an unavoidable follow-up → Stage 2.6. |
+
+### Stage 2.6 — Scoped JWT injection so issues transition to `done` (single worktree)
+
+Added 2026-04-21 after PR #8's Finding C. Paperclip's run-handler never transitions issue status automatically — agents must `PATCH /api/issues/:id` themselves, which requires a bearer token. Stage 2.5 deliberately avoided injecting a board token (security regression). The correct path is short-lived scoped JWTs minted by the adapter using Paperclip's `PAPERCLIP_AGENT_JWT_SECRET`.
+
+| Worktree | Scope |
+|----------|-------|
+| `fix/paperclip-scoped-jwt` | Patch `hermes-paperclip-adapter`'s `buildPaperclipEnv()` to sign a short-lived JWT (≤10min, scoped to `{agentId, companyId, runId}`) using `process.env.PAPERCLIP_AGENT_JWT_SECRET` and export as `PAPERCLIP_AGENT_JWT`. Update the prompt template to emit exactly one final `PATCH /issues/:id` call using that token. Full brief: [paperclip-scoped-jwt.md](../../scripts/worktrees/migration/fix/paperclip-scoped-jwt.md). Completion criterion: assigned issue transitions `todo → in_progress → done` automatically with zero board-token exposure. |
 
 ### Stage 3 — Write the v2 audit suite (single worktree)
 
