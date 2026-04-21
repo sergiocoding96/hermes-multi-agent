@@ -53,8 +53,8 @@ Prerequisite: PR #7 (`wire/paperclip-employees`) is merged. Both employees exist
 ```bash
 # Apply the override to existing agents
 cd ~/Coding/Hermes
-source ~/.claude/memos-hub.env  # not strictly needed but harmless
-PAPERCLIP_BOARD_TOKEN=<token> bash scripts/paperclip/v2/apply-prompt-override.sh
+source ~/.paperclip/board-token.env   # exports PAPERCLIP_BOARD_TOKEN + PAPERCLIP_URL
+bash scripts/paperclip/v2/apply-prompt-override.sh
 
 # Marker for collision avoidance
 TS=$(date +%s)
