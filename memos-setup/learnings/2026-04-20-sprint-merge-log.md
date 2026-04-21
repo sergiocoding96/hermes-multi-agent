@@ -446,4 +446,27 @@ Listed roughly highest-ROI to lowest. Spin each up in a new worktree using the s
 
 **Deviations / surprises:** None. Note: `auto/` gets double-symlinked into `~/.claude/skills/auto` as a side effect of symlink-badass-skills.sh — intentional, plugin-generated skills visible to Claude Code.
 
+---
+
+### PR #6 — Hermes `wire/ceo-hub-access` → merged 2026-04-21
+
+**Task:** Give Claude Code CEO session read/write access to the memos hub (bash minimum + MCP polish).
+
+**Merge commit:** `f331599` (cleanup commit `c28f9a2` removed root artifacts immediately after)
+
+**Acceptance criteria met:**
+- CEO token (role=member) saved to `~/.claude/memos-hub.env` (0600, not committed) ✅
+- `memos-search.sh "query"` returns matching hub results as JSON ✅
+- Cross-agent results (≥2 source agents) returned in search ✅
+- Output jq-friendly, documented in `scripts/ceo/README.md` ✅
+- Seed→search round-trip: marker `CEO-ACCESS-1776736574` found in hits from both research-agent and email-marketing ✅
+- MCP server starts cleanly, registered as `memos-hub` in Claude Code, `memos_search` available ✅
+- Credentials never in MCP tool args/results ✅
+
+**Scripts shipped:** `provision-ceo-token.sh`, `memos-search.sh`, `memos-write.sh`, `scripts/ceo/memos-hub-mcp/server.py` (Python MCP)
+
+**Deviations / surprises:**
+- Session committed `INITIATION-PROMPT.md` and `TASK.md` at repo root (worktree artifacts). Cleaned up immediately post-merge with `c28f9a2`.
+- Test seeding used `memos-write.sh` directly instead of `hermes -p research-agent chat` — valid deviation since `wire/paperclip-employees` not yet landed.
+
 After any new sprint, append a new dated log in `memos-setup/learnings/` and re-score the same areas against this document's numbers.
