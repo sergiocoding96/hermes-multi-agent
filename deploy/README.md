@@ -121,6 +121,60 @@ cd deploy && ./install.sh
 The installer is idempotent — existing `.env` files are never overwritten,
 and existing `agents-auth.json` triggers a skip (delete it to regenerate).
 
+## Skill Ground Truth — `~/Coding/badass-skills/`
+
+`~/Coding/badass-skills/` is the **single shared skill source** for all runtimes:
+
+| Runtime | How it reads skills |
+|---------|-------------------|
+| Hermes workers | `external_dirs` in each profile's `config.yaml` |
+| Claude Code CEO | `~/.claude/skills/` symlinks → `~/Coding/badass-skills/*/` |
+| MemOS plugin output | `~/.hermes/memos-state-*/skills-store` symlinked → `~/Coding/badass-skills/auto/` |
+
+### Directory layout
+
+```
+~/Coding/badass-skills/
+  gemini-video/     # hand-authored, Hermes + Claude Code compatible
+  notebooklm/       # hand-authored
+  pdf/              # hand-authored
+  auto/             # ← MemOS plugin writes generated SKILL.md files here
+                    #   (via ~/.hermes/memos-state-*/skills-store symlink)
+```
+
+### Setup (run once per machine)
+
+```bash
+# 1. Symlink hand-authored skills into Claude Code's discovery directory
+bash scripts/migration/symlink-badass-skills.sh
+
+# 2. Redirect plugin skill-output to badass-skills/auto/
+bash scripts/migration/configure-plugin-skill-output.sh
+
+# 3. Verify
+ls -la ~/.claude/skills/                          # should show 3 symlinks
+ls -la ~/.hermes/memos-state-*/skills-store       # should show -> .../badass-skills/auto
+```
+
+### Format compatibility
+
+The existing 3 hand-authored skills (`gemini-video`, `notebooklm`, `pdf`) use YAML
+frontmatter (`name:`, `description:`) — the format Claude Code's skill discovery
+expects. Auto-generated skills from the MemOS plugin land in `auto/` in the same
+format (the plugin's `generator.ts` writes YAML-frontmatter SKILL.md files).
+
+Skills authored only for Hermes (if any) will appear as "external / user_installed"
+in Claude Code — usable but not Paperclip-managed. Do not convert single-runtime
+skills here; note them in the skill's SKILL.md header instead.
+
+### Reproducing on a new machine
+
+1. Clone `badass-skills` to `~/Coding/badass-skills` (or let `install.sh` do it).
+2. Run `scripts/migration/install-plugin.sh <profile>` for each Hermes profile.
+3. Run the two setup scripts above.
+4. No further configuration needed — the plugin picks up `stateDir/skills-store`
+   which now resolves to `~/Coding/badass-skills/auto/`.
+
 ## Related Repos
 
 | Repo | Purpose |
