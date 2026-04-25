@@ -219,3 +219,73 @@ These are **two independent SQLite stores**. Workers capture into their local v2
 | `scripts/migration/plugin-patches-v2/bridge_client.py.patch` | v2 (workers) | bridge spawn via tsx (Node 22 compat) |
 
 All applied + verified by `apply-plugin-patches.sh` on every hub bootstrap.
+
+---
+
+# Sprint 4 — cross-agent memory sharing (later same day)
+
+After Sprint 3 we discovered the v2 plugin's `core/hub/` directory contains only `README.md` — its `sharing.role: client` implementation isn't shipped in `2.0.0-beta.1`. So `hub.enabled: true` in worker config has nothing behind it; workers were storing locally with no path to push to the v1.0.3 hub for cross-agent visibility.
+
+We also discovered the Sprint 3 patch was incomplete: `shutil.which("node")` returned Linuxbrew's Node 25, but `better-sqlite3` had been rebuilt for `/usr/bin/node` (Node 22). The bridge spawned, crashed on the binding mismatch in <2s, and the smoke test only "worked" because Hermes silently fell back to its built-in MEMORY.md / holographic facts store. That false positive is corrected — see amended `bridge_client.py` patch.
+
+## What we built (the missing client side)
+
+A pragmatic SQLite-to-hub bridge that pushes new traces from the v2 worker DB to the v1.0.3 hub on a cron tick. Until upstream MemTensor lands the native `core/hub/` client, this fills the gap:
+
+| File | Role |
+|---|---|
+| [scripts/ceo/provision-worker-token.sh](../../scripts/ceo/provision-worker-token.sh) | Idempotently mints a hub-side bearer token for a Hermes worker (joins as the worker's `identityKey`, admin-approves if pending). Saves to `~/.hermes/profiles/<profile>/.hub-token` (0600). |
+| [scripts/migration/hub-sync.py](../../scripts/migration/hub-sync.py) | Reads new traces from `~/.hermes/memos-plugin/data/memos.db` (where `WHERE ts > watermark AND user_text/agent_text non-empty`), POSTs each to `/api/v1/hub/memories/share` using the worker's bearer, persists synced ids + watermark in `~/.hermes/profiles/<profile>/hub-sync-state.db`. Idempotent. |
+| `crontab` | `*/5 * * * * /usr/bin/python3 …/hub-sync.py research-agent` |
+
+## End-to-end smoke (verified)
+
+```
+$ hermes chat -q "Remember: my mothers name is Ada Lovelace ..." -p research-agent
+→ "Acknowledged. Your mother is Ada Lovelace."   (8s, 0 tool calls)
+
+$ python3 scripts/migration/hub-sync.py research-agent
+→ pushed=2 skipped=0 watermark=...
+
+$ curl -X POST hub/api/v1/hub/search '{"query":"my mothers name"}'
+→ hubRank=1, ownerName=research-agent, summary="Remember: my mothers name is Ada Lovelace …"
+```
+
+The migration plan's *user → CEO → worker → memory-informed reply* loop is now realizable: CEO can search the hub and find what a worker captured.
+
+## Known scope choices
+
+- **One sync identity per worker, but only `research-agent` is wired in cron.** The v2 plugin stores all profiles' traces in **one shared `~/.hermes/memos-plugin/data/memos.db`** with no profile field on `sessions` or `traces`. Running per-profile syncs would push the same traces under different `sourceAgent` names (we did this once, then unshared the duplicates). For now: one cron job runs sync as `research-agent`, attributing all worker memories to it. To fix per-profile attribution properly, either set `MEMOS_STATE_DIR` per profile (requires patching `daemon_manager.py`) or have Hermes write profile name into `sessions.meta_json` (upstream change). Documented; not blocking.
+- **Adapter-init stub traces are filtered.** The v2 memtensor adapter inserts an empty placeholder trace on session boot; sync skips traces where both `user_text` and `agent_text` are empty.
+- **No retry/backoff.** Sync exits 2 on the first hub error and waits for the next cron tick. Acceptable at 5-min interval.
+
+## Cron entries (current state)
+
+```
+@reboot cd /home/openclaw/.openclaw/workspace/firecrawl && /usr/bin/docker compose up -d
+@reboot sleep 5 && CAMOFOX_BIND_HOST=127.0.0.1 CAMOFOX_PORT=9377 ... server.js
+@daily /home/openclaw/Coding/Hermes/scripts/ceo/refresh-ceo-token.sh ...
+*/5 * * * * /usr/bin/python3 /home/openclaw/Coding/Hermes/scripts/migration/hub-sync.py research-agent ...
+```
+
+(Product 1's `@reboot cd …/MemOS && ./start-memos.sh` was removed during Sprint 2 closure.)
+
+## What "perfect" looks like now
+
+```
+v1.0.3 hub (port 18992)              ← shared memory store, CEO + workers read/write
+  /api/v1/hub/health                   reports WAL/disk/integrity
+  /api/v1/hub/memories/share          worker push endpoint
+  /api/v1/hub/search                  CEO + worker query endpoint
+
+v2 bridge (per-session subprocess)    ← workers' immediate capture surface
+  spawned via /usr/bin/node tsx       Node 22, NODE_MODULE_VERSION 127
+  SQLite at ~/.hermes/memos-plugin/data/memos.db
+  auto-prefetch on every turn
+
+hub-sync.py (cron every 5 min)        ← bridges v2 capture → v1.0.3 hub
+  watermark + synced-id ledger        idempotent, fail-soft
+  attributes traces to research-agent until per-profile isolation lands
+```
+
+This is the operational migration end-state. All migration-plan acceptance criteria can now be met (CEO queries hub, workers auto-capture, capture is visible cross-agent), and the original 2026-04-23 audit findings against v2 architecture are now relevant blockers we'd patch in a future sprint if/when MemTensor ships v2 stable.
