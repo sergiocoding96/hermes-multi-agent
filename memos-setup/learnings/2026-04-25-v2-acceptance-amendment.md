@@ -123,8 +123,37 @@ If anything in v1.0.3-patched proves unworkable, the plan-of-record rollback at 
 
 - [x] Patches written, applied, verified, persistent
 - [x] Amendment doc landed
-- [ ] Commit + push branch
-- [ ] User runs 3 missing audits
-- [ ] Stage 5 worktree merges (start with `hermes/fallback-model`)
-- [ ] End-to-end smoke
-- [ ] Stop Product 1
+- [x] Patch suite committed (`bd29b4a`) + token-refresh cron committed (`879ef12`)
+- [x] `hermes/fallback-model` config in place + failover smoke (DeepSeek answers when MiniMax key broken)
+- [x] End-to-end hub smoke: share → list → search (FTS+vector) → unshare cycle passes
+- [x] Product 1 (`:8001`) stopped: `@reboot` cron removed, process killed, port free
+- [x] Rollback path verified intact: `/home/openclaw/Coding/MemOS/start-memos.sh` exists, fork retained
+- [ ] **USER** runs 3 missing Stage-4 audits (functionality-v2, resilience-v2, hub-sharing-v2) against patched v1.0.3
+- [ ] **Sprint 3 scope** (out of this sprint):
+  - Wire research-agent + email-marketing Hermes profiles to use Product 2 plugin in **client mode** (currently use legacy `memos-toolset`/Product 1 — they will fail on next memory call until rewired)
+  - Decide on v2.0.0-beta.1 install at `~/.hermes/memos-plugin/` (different package `@memtensor/memos-local-plugin`, idle, never started — keep as Sprint 3 spike or remove)
+  - Stage 5 leftovers: `hermes/mcp-integration`, `hermes/python-library-adapter`, `hermes/github-webhook`
+
+## Migration end-state (2026-04-25)
+
+```
+Product 2 hub        @memtensor/memos-local-hermes-plugin v1.0.3, patched
+                     systemd user unit memos-hub.service (enabled, active)
+                     127.0.0.1:18992 (loopback only)
+                     /api/v1/hub/health reports healthy
+
+Product 1 server     STOPPED
+                     no @reboot cron
+                     fork at sergiocoding96/MemOS retained for rollback
+                     start-memos.sh + ~/Coding/MemOS/ untouched
+
+CEO MCP wiring       memos-hub MCP env in ~/.claude.json points at hub
+                     daily token-refresh cron renews bearer
+
+Hermes workers       still configured against legacy memos-toolset → was Product 1
+                     memory calls will fail until Sprint 3 rewires them to
+                     Product 2 client mode. Worker capture is not yet operational
+                     against the new hub. Hub itself is ready to receive.
+```
+
+The hub is live and validated as a memory backend. Workers will start using it once Sprint 3 wires them — that's the explicit gap, documented above.
