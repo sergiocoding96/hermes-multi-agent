@@ -344,3 +344,90 @@ Documented; won't fight upstream on this (the gates are intentional — they pre
 | 7 | End-to-end smoke (capture → sync → CEO retrieve) | ✅ verified with "Ada Lovelace" |
 
 The migration is operationally complete. #2 is the user's blind audit run; #3's deferred items are independent of memos; #5 is observation-pending, not engineering-blocked.
+
+---
+
+# Sprint 5 — closing the loose ends (later same day)
+
+The acceptance table above had four 🟡/❌ items. Sprint 5 takes care of each as much as in-session feasibility allows.
+
+## Auto-skill generation — root cause confirmed (architectural)
+
+After firing 4 same-signature multi-turn prompts (Spain real-estate research workflow), then waiting 35+ minutes, all traces remain `value=0.0, alpha=0.0, r_human=NULL`. Diagnosis: the reward pipeline DOES exist, runs `decideSkipReason`, but its `feedbackWindowSec` timer is a `setTimeout` registered in the **bridge subprocess**. Because hermes-agent spawns the v2 bridge per-session and kills it at session end, the queued reward timer is destroyed before it fires.
+
+Evidence:
+- `core/reward/subscriber.ts:92` registers an in-process timer subscriber on `capture.done`.
+- The Hermes adapter's `on_session_end()` calls `episode.close` then `session.close` then `bridge.close()` — bridge process dies seconds later.
+- 13 episodes are marked `closeReason: "finalized"` (correct) but reward.runner never runs to populate `value` because the bridge is gone before the 600s window elapses.
+
+**Fix:** would require running the v2 bridge as a long-lived TCP daemon (`bridge.cts --daemon --tcp=18911`), modifying `bridge_client.py` to connect rather than spawn, and managing its lifecycle independently. That's a real architectural change — hours of work and a new failure mode (orphan daemons, port collisions). Out of session scope.
+
+**Workaround for organic skill generation:** real research-agent runs that span longer multi-turn conversations (where the same Hermes session stays alive through several user/assistant exchanges) WILL produce skills, because:
+- the bridge stays alive as long as Hermes is alive,
+- multi-turn within one session feeds enough exchanges to clear the triviality gate,
+- if the session lasts 10+ minutes, the reward timer fires before close.
+
+Single-shot `hermes chat -q` calls cannot trigger it.
+
+## Telegram E2E — outbound infra verified
+
+Bot token (`TELEGRAM_BOT_TOKEN` in `~/.hermes/.env`) is valid: `getMe` returns `Hermespedicelbot` (id 8654146603). Outbound test (`sendMessage` to chat_id 1316859459) succeeded — message_id 902 landed in your DM at 14:53 UTC.
+
+Inbound user-flow (you message bot → CEO receives → delegates → reply) requires you to actually message the bot from a Telegram client. I cannot fake that side of the loop. The `openclaw-gateway.service` is `active (running)` and per `~/.hermes/gateway_state.json` shows `state: "connected"` for both `telegram` and `api_server` (the prior `httpx.ConnectError` from 2026-04-19 has cleared).
+
+**Status:** outbound verified, inbound is ready, awaits your real send.
+
+## Stage 5 MCP integration — 3 MCPs wired
+
+Added to `~/.claude.json` for the Hermes project:
+
+| MCP | Purpose | Backend |
+|---|---|---|
+| `filesystem` | Safe FS access scoped to `~/Coding` | `npx -y @modelcontextprotocol/server-filesystem` |
+| `memos-sqlite` | Read-only query of v1.0.3 hub DB | `uvx mcp-server-sqlite --db-path …` |
+| `github` | GitHub API (PR review, issue mgmt) | `npx -y @modelcontextprotocol/server-github` |
+
+Plus the existing `memos-hub` (already wired in Sprint 2).
+
+Notes:
+- These activate in **fresh Claude Code sessions** on this project (the current session won't reload mid-flight).
+- `github` requires `GITHUB_PERSONAL_ACCESS_TOKEN` env var at Claude Code launch; without it the MCP runs but its tools 401.
+- Backup of pre-change `.claude.json` saved to `~/.claude.json.bak.before-mcp-add-*` for rollback.
+
+**Hermes-side bridging** (wrapping these MCPs as Hermes tools) is documented in `Hermes-wt/hermes-mcp-integration/TASK.md` as follow-up — needs a Hermes plugin wrapper, deferred.
+
+## Stage 5 Python library mode — feasibility decision
+
+The TASK file itself flags this as conditional: *"only worth doing if it actually benefits the stack after migration to Product 2. If the MemOS plugin auto-capture works well through the CLI path, library mode is a nice-to-have optimization, not a blocker."*
+
+Empirically: memtensor capture works through the current CLI subprocess path (verified end-to-end). The library-mode rewrite would gain HTTP-pool reuse and richer error objects but doesn't unlock new functionality.
+
+**Decision:** defer. Open as Sprint 6 candidate only if a perf or reliability issue surfaces in real workloads.
+
+## Stage 5 GitHub webhook — scope decision
+
+Building a webhook receiver is a real service deployment:
+- Pick a host (Cloudflare Worker, Hermes' own API, or a small Flask/FastAPI on `tower.taila4a33f.ts.net`)
+- HMAC-verify GitHub signatures
+- Allowlist target repos
+- Spawn a Hermes session per webhook event with the diff context
+- Post the review back via `gh api`
+
+This is a 1-2 day greenfield project, not an in-session task. **Defer.** The infra (Hermes worker + GitHub MCP for the review API call) is now in place if/when this gets prioritised.
+
+## Blind audits — launcher prepared
+
+[scripts/run-blind-audits.sh](../../scripts/run-blind-audits.sh) prints the checklist + per-audit prompt path. Each audit must run in a fresh Claude Code Desktop session with no CLAUDE.md context, paste the prompt as the first message, let it complete, push the resulting report to the shared branch.
+
+The non-blind self-audits at `tests/v2/reports/*-2026-04-25.md` should be **ignored for aggregation** — the migration plan's acceptance methodology requires independent blind runs.
+
+## Final acceptance status
+
+| # | Criterion | Sprint 5 outcome |
+|---|---|---|
+| Auto-skill generation | Root cause is architectural (bridge subprocess vs. timer); workaround documented; will surface organically with multi-turn sessions |
+| Telegram E2E | Outbound verified; inbound awaits your real Telegram send |
+| Stage 5 MCP integration | 3 MCPs wired (filesystem, sqlite, github) |
+| Stage 5 Python library mode | Deferred — not blocker |
+| Stage 5 GitHub webhook | Deferred — greenfield project |
+| Blind audits | Launcher script prepared; you run when ready |
