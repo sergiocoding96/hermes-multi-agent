@@ -289,3 +289,44 @@ hub-sync.py (cron every 5 min)        ← bridges v2 capture → v1.0.3 hub
 ```
 
 This is the operational migration end-state. All migration-plan acceptance criteria can now be met (CEO queries hub, workers auto-capture, capture is visible cross-agent), and the original 2026-04-23 audit findings against v2 architecture are now relevant blockers we'd patch in a future sprint if/when MemTensor ships v2 stable.
+
+## Reproducibility (deploy/)
+
+The Sprint 2–4 work touched a lot of host-only state. The following are now committed so a fresh deploy reconstructs a working system:
+
+- [deploy/systemd/memos-hub.service](../../deploy/systemd/memos-hub.service) — user-mode unit, restart-on-failure, loopback bind.
+- [deploy/cron/hermes-memos.crontab](../../deploy/cron/hermes-memos.crontab) — `@daily` CEO token refresh + `*/5 min` worker→hub sync.
+- [deploy/scripts/install-infra.sh](../../deploy/scripts/install-infra.sh) — idempotent installer: copies the unit, enables it, ensures lingering, merges cron entries.
+
+Profile config flips (`memory.provider: memtensor`) and worker token files (`~/.hermes/profiles/<profile>/.hub-token`) are still per-host and per-profile — they're produced by `scripts/ceo/provision-worker-token.sh` and need to be applied per profile, per machine. Documented but not auto-deployed because profile names are deployment-specific.
+
+## One genuine plan-criterion gap: auto-skill generation
+
+The plan's *"`~/Coding/badass-skills/` receives auto-generated skills from at least one real session"* is **not yet realized.** State today (after our sessions):
+
+```
+$ sqlite3 ~/.hermes/memos-plugin/data/memos.db
+  traces:              10
+  sessions:             5
+  episodes:            10
+  policies:             0   ← skill induction hasn't fired
+  l2_candidate_pool:    0
+```
+
+`minSupport: 2` and `minGain: 0.1` are the defaults — the L2 induction pipeline needs at least 2 traces with similar enough signature to produce a candidate, and the gain threshold needs to be cleared. Our 10 test traces are all unrelated one-off prompts ("teal-green," "BLUE-EAGLE-7," "Ada Lovelace," "EM-99"); none cluster.
+
+**Resolution:** this is a usage-volume gating issue, not a wiring bug. After enough real research-agent runs on the same topic, the L2 candidate pool will populate and policies will crystallize. Document and watch — not a blocker for declaring the migration done.
+
+## Acceptance criteria — final pass
+
+| # | Criterion | State |
+|---|---|---|
+| 1 | Stages 1–3 worktrees merged | ✅ |
+| 2 | All 10 Stage-4 audits ≥ 7/10 (amended bar: applicable findings ≥ 5/10) | 🟡 7/10 audits committed; 3 remaining are USER-driven blind sessions |
+| 3 | Stage 5 worktrees | 🟡 fallback-model in place + smoke-validated; 3 others deferred (independent feature work) |
+| 4 | MemOS server stopped | ✅ |
+| 5 | `badass-skills/` receives auto-generated skills | ⏳ usage-volume gated; will populate organically |
+| 6 | CEO can query hub & retrieve cross-agent memories | ✅ |
+| 7 | End-to-end smoke (capture → sync → CEO retrieve) | ✅ verified with "Ada Lovelace" |
+
+The migration is operationally complete. #2 is the user's blind audit run; #3's deferred items are independent of memos; #5 is observation-pending, not engineering-blocked.
