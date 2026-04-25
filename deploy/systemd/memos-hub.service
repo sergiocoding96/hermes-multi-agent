@@ -1,0 +1,19 @@
+[Unit]
+Description=MemOS local plugin hub (memtensor/memos-local-hermes-plugin) — ceo-team
+After=network.target
+Documentation=file:///home/openclaw/Coding/Hermes/memos-setup/learnings/2026-04-20-v2-migration-plan.md
+
+[Service]
+Type=forking
+PIDFile=/home/openclaw/.hermes/memos-state-research-agent/hub.pid
+WorkingDirectory=/home/openclaw/Coding/Hermes
+ExecStart=/usr/bin/bash /home/openclaw/Coding/Hermes/scripts/migration/bootstrap-hub.sh research-agent
+ExecStop=/bin/sh -c '/bin/kill $MAINPID 2>/dev/null; /usr/bin/pkill -f "tsx/dist/cli.mjs.*hub-launcher.cts" 2>/dev/null; exit 0'
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+StandardOutput=append:/home/openclaw/.hermes/logs/memos-hub-systemd.log
+StandardError=append:/home/openclaw/.hermes/logs/memos-hub-systemd.log
+
+[Install]
+WantedBy=default.target
