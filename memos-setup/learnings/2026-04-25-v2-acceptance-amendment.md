@@ -315,7 +315,21 @@ $ sqlite3 ~/.hermes/memos-plugin/data/memos.db
 
 `minSupport: 2` and `minGain: 0.1` are the defaults — the L2 induction pipeline needs at least 2 traces with similar enough signature to produce a candidate, and the gain threshold needs to be cleared. Our 10 test traces are all unrelated one-off prompts ("teal-green," "BLUE-EAGLE-7," "Ada Lovelace," "EM-99"); none cluster.
 
-**Resolution:** this is a usage-volume gating issue, not a wiring bug. After enough real research-agent runs on the same topic, the L2 candidate pool will populate and policies will crystallize. Document and watch — not a blocker for declaring the migration done.
+**Resolution:** this is a **dual-gating** issue, not a single-volume threshold. After firing 5 same-signature prompts about Spain real-estate research workflows and waiting 7+ minutes, the state was:
+
+```
+traces=20  policies=0  l2_candidate_pool=0  skills=0  feedback=0
+all traces: value=0.0  alpha=0.0  r_human=NULL  priority=0.5
+```
+
+`value=0.0 / r_human=NULL` across all 20 traces means **reward.runner never fired**, which is the upstream trigger for L2 induction. Two gates explain this:
+
+1. **Triviality gate.** `algorithm.reward.minExchangesForCompletion = 2` (per defaults). Each of our prompts was a single-turn session (1 user message + 1 assistant response). `min(user_turns, assistant_turns) = 1 < 2` → episode marked trivial → reward skips → `episode.r_task` remains 0 → L2 sees no high-value traces to cluster.
+2. **Feedback window.** `algorithm.reward.feedbackWindowSec = 600` (10 min) per defaults. Even if the triviality gate passed, the reward run is delayed 10 min after `capture.done`, deferring L2 induction another window.
+
+**Implication for users:** auto-skill crystallisation requires **multi-turn task-shaped episodes** (≥ 2 exchanges, ≥ 80 chars per defaults) clustering on the same signature, plus the 10-min reward window per episode. A research-agent run that goes back-and-forth on a topic across several turns is the pattern that triggers it. One-shot "remember X" prompts will never produce skills.
+
+Documented; won't fight upstream on this (the gates are intentional — they prevent garbage policies from crystallising). Real-world usage will populate `policies` organically; one-shot smoke tests can't.
 
 ## Acceptance criteria — final pass
 
