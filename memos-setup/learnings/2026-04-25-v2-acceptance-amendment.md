@@ -157,3 +157,65 @@ Hermes workers       still configured against legacy memos-toolset → was Produ
 ```
 
 The hub is live and validated as a memory backend. Workers will start using it once Sprint 3 wires them — that's the explicit gap, documented above.
+
+---
+
+# Sprint 3 — worker wiring (added later same day)
+
+After the Sprint 2 closure above, we discovered that `hermes-agent` already had a `memtensor` memory-provider symlink pointing at a **second plugin** the user had installed: `@memtensor/memos-local-plugin@2.0.0-beta.1` at `~/.hermes/memos-plugin/`. This is a different package than the v1.0.3 hub we patched (`@memtensor/memos-local-hermes-plugin`), and it's the package the audits actually ran against.
+
+## What blocked the v2 wiring
+
+1. **`better-sqlite3` ABI mismatch.** v2's native binding was built for Node 25 (NODE_MODULE_VERSION 141); `/usr/bin/node` is 22 (127). Bridge crashed loading the binding.
+2. **ESM strip-types resolution.** v2's bridge_client.py spawned `node --experimental-strip-types bridge.cts`. That flag does not resolve `from "./orchestrator.js"` to `orchestrator.ts` on Node 22, so the bridge crashed importing `core/pipeline/orchestrator.js`.
+
+## What we did to unblock
+
+1. `npm rebuild better-sqlite3 --build-from-source` inside `~/.hermes/memos-plugin/` rebuilt the binding for Node 22.
+2. Patched `adapters/hermes/memos_provider/bridge_client.py` to prefer spawning via the bundled `node_modules/tsx/dist/cli.mjs` (handles ESM .js→.ts resolution natively) and fall back to the `--experimental-strip-types` path only if tsx is absent. Saved as a unified diff at [scripts/migration/plugin-patches-v2/bridge_client.py.patch](../../scripts/migration/plugin-patches-v2/bridge_client.py.patch). Sentinel-verified.
+3. Extended [scripts/migration/apply-plugin-patches.sh](../../scripts/migration/apply-plugin-patches.sh) to apply the v2 patch idempotently against `~/.hermes/memos-plugin` (env override `MEMOS_V2_INSTALL_DIR`). Pinned to plugin version `2.0.0-beta.1`. Re-runs cheaply on every hub bootstrap; warns rather than fails if v2 install is absent or a different version.
+4. Set `memory.provider: memtensor` in:
+   - `~/.hermes/profiles/research-agent/config.yaml`
+   - `~/.hermes/profiles/email-marketing/config.yaml`
+
+## Smoke evidence
+
+```
+$ hermes chat -q "Please remember … my favorite color is teal-green …" -p research-agent
+🧠 memory  +user: "Favorite color is teal-green"  0.0s
+→ "Got it, teal-green is saved."   (39s, 2 tool calls)
+
+$ hermes chat -q "What is my favorite color?" -p research-agent     # separate process
+→ "Teal-green."                    (36s, 0 tool calls — auto-prefetch path)
+
+$ hermes chat -q "Just say MTOK." -p email-marketing                # smoke email-marketing
+→ "MTOK"                           (36s)
+```
+
+Cross-session memory recall on a separate Hermes process **with zero explicit `memory_search` tool calls** confirms the auto-prefetch path is operational. Both worker profiles can now use the v2 memtensor provider.
+
+## Architecture as of Sprint 3 close
+
+```
+v1.0.3 hub (port 18992)              ← CEO MCP target; SQLite at memos-state-research-agent
+   memos-hub MCP wrapper ────────────  Claude Code reads/writes via Bearer token
+
+v2 bridge (per-session subprocess)    ← Workers' memory backend
+   spawned by hermes-agent's
+   memtensor provider via tsx
+   stores at ~/.hermes/memos-plugin/data/memos.db
+   (separate SQLite from the hub)
+```
+
+These are **two independent SQLite stores**. Workers capture into their local v2 store; the hub serves the CEO's shared memories. **Cross-agent memory sharing via the hub is not yet wired** — the v2 plugin can push to a hub via its `sharing.role: client` config, but that wiring (client config + auth to v1.0.3 hub) is open Sprint 3 follow-up if cross-agent sharing matters.
+
+## Patches in the repo
+
+| Patch | Plugin | Audit/Issue closed |
+|---|---|---|
+| `scripts/migration/plugin-patches-v1.0.3/src-hub-server.ts.patch` | v1.0.3 (hub) | zero-knowledge bind + observability /health |
+| `scripts/migration/plugin-patches-v1.0.3/src-ingest-dedup.ts.patch` | v1.0.3 (hub) | performance bounded scan + INFO dedup events |
+| `scripts/migration/plugin-patches-v1.0.3/src-storage-sqlite.ts.patch` | v1.0.3 (hub) | data-integrity api_logs STRICT |
+| `scripts/migration/plugin-patches-v2/bridge_client.py.patch` | v2 (workers) | bridge spawn via tsx (Node 22 compat) |
+
+All applied + verified by `apply-plugin-patches.sh` on every hub bootstrap.

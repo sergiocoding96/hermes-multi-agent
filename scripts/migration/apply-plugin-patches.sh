@@ -89,3 +89,37 @@ if [[ -f "$TELEMETRY_CREDS" ]]; then
 fi
 
 success "All Hermes patches applied/verified for v$PLUGIN_VERSION"
+
+# ─── Optional: also patch the v2 worker plugin if present ───
+# The v2 plugin (@memtensor/memos-local-plugin@2.0.0-beta.1) lives in a
+# separate install at ~/.hermes/memos-plugin and is what Hermes workers
+# use via the memtensor memory provider. It needs one Sprint 3 patch so
+# bridge.cts can be spawned via tsx (Node 22 ESM strip-types limitation).
+V2_INSTALL="${MEMOS_V2_INSTALL_DIR:-$HOME/.hermes/memos-plugin}"
+V2_PATCHES="$REPO/scripts/migration/plugin-patches-v2"
+if [[ -d "$V2_INSTALL" && -d "$V2_PATCHES" ]]; then
+  V2_VERSION="$(node -p "require('$V2_INSTALL/package.json').version" 2>/dev/null || echo unknown)"
+  if [[ "$V2_VERSION" == "2.0.0-beta.1" ]]; then
+    V2_TARGET="$V2_INSTALL/adapters/hermes/memos_provider/bridge_client.py"
+    V2_SENTINEL='Hermes patch (Sprint 3 worker-wiring)'
+    if [[ -f "$V2_TARGET" ]]; then
+      if grep -qF "$V2_SENTINEL" "$V2_TARGET"; then
+        info "v2 already patched: bridge_client.py"
+      else
+        info "Applying v2 patch → bridge_client.py"
+        if patch --forward --batch --silent -d "$V2_INSTALL" -p1 < "$V2_PATCHES/bridge_client.py.patch"; then
+          if grep -qF "$V2_SENTINEL" "$V2_TARGET"; then
+            success "v2 patch applied + verified"
+          else
+            error "v2 patch sentinel missing after apply — inspect $V2_TARGET"
+            exit 1
+          fi
+        else
+          warn "v2 bridge_client.py patch failed to apply (skipping; v2 wiring not blocking hub)"
+        fi
+      fi
+    fi
+  else
+    warn "v2 plugin version is '$V2_VERSION' — patches pinned to 2.0.0-beta.1, skipping"
+  fi
+fi
