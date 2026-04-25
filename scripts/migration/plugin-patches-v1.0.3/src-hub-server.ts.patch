@@ -1,0 +1,55 @@
+--- a/src/hub/server.ts
++++ b/src/hub/server.ts
+@@ -90,7 +90,7 @@
+           retries++;
+           hubPort = this.port + retries;
+           this.opts.log.warn(`Hub port ${hubPort - 1} in use, trying ${hubPort}`);
+-          this.server!.listen(hubPort, "0.0.0.0");
++          this.server!.listen(hubPort, "127.0.0.1");
+         } else {
+           this.server?.off("listening", onListening);
+           reject(err);
+@@ -105,7 +105,7 @@
+       };
+       this.server!.on("error", onError);
+       this.server!.once("listening", onListening);
+-      this.server!.listen(hubPort, "0.0.0.0");
++      this.server!.listen(hubPort, "127.0.0.1");
+     });
+ 
+     const bootstrap = this.userManager.ensureBootstrapAdmin(
+@@ -283,6 +283,34 @@
+       });
+     }
+ 
++    // Hermes patch (observability audit 2026-04-23): rich health probe.
++    // Public, unauthenticated: returns liveness + WAL/disk + integrity flags.
++    // Loopback-only since the hub binds 127.0.0.1, so the surface is local-only.
++    if (req.method === "GET" && routePath === "/api/v1/hub/health") {
++      let status: "healthy" | "degraded" = "healthy";
++      const issues: string[] = [];
++      let stats: ReturnType<SqliteStore["getDbStats"]> | null = null;
++      try {
++        stats = this.opts.store.getDbStats();
++        if (!stats.integrityOk) { status = "degraded"; issues.push("sqlite integrity check failed"); }
++        if (stats.walSizeBytes > 256 * 1024 * 1024) { status = "degraded"; issues.push("wal > 256MB"); }
++      } catch (err) {
++        status = "degraded";
++        issues.push(`db probe failed: ${err instanceof Error ? err.message : String(err)}`);
++      }
++      const code = status === "healthy" ? 200 : 503;
++      return this.json(res, code, {
++        status,
++        teamName: this.teamName,
++        hubInstanceId: this.hubInstanceId,
++        uptimeSec: Math.round(process.uptime()),
++        nodeVersion: process.version,
++        db: stats,
++        issues,
++        ts: Date.now(),
++      });
++    }
++
+     if (req.method === "POST" && routePath === "/api/v1/hub/join") {
+       const body = await this.readJson(req);
+       if (!body || body.teamToken !== this.teamToken) {

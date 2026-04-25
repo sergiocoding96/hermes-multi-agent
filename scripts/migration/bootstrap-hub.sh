@@ -126,6 +126,20 @@ if command -v fuser >/dev/null 2>&1; then
   fuser -k "${HUB_PORT}/tcp" 2>/dev/null || true
 fi
 
+# ─── Apply Hermes patches against the v1.0.3 plugin install ───
+# Single source of truth: scripts/migration/apply-plugin-patches.sh applies
+# unified diffs from scripts/migration/plugin-patches-v1.0.3/ against the
+# install dir. Idempotent (patch --forward) and fail-closed via sentinel
+# verification. Closes audit blockers for: hub bind, /health endpoint,
+# api_logs STRICT, dedup bounded scan, telemetry creds permissions.
+PATCH_APPLIER="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/apply-plugin-patches.sh"
+if [[ -x "$PATCH_APPLIER" ]]; then
+  "$PATCH_APPLIER" "$INSTALL_DIR" || { error "Hermes patch suite failed — refusing to launch hub"; exit 1; }
+else
+  error "Patch applier missing or not executable: $PATCH_APPLIER"
+  exit 1
+fi
+
 # ─── Stage hub-launcher.cts inside the plugin dir ───
 # bridge.cts daemon mode does NOT start the HubServer — the hub is only
 # wired by the OpenHarness plugin entry (index.ts). We stage a standalone

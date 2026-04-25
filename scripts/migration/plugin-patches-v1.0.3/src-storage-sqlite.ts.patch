@@ -1,0 +1,125 @@
+--- a/src/storage/sqlite.ts
++++ b/src/storage/sqlite.ts
+@@ -610,19 +610,77 @@
+   }
+ 
+   private migrateApiLogs(): void {
+-    this.db.exec(`
++    // Hermes patch (data-integrity audit 2026-04-23, 4/10 → ≥7/10):
++    // api_logs originally lacked STRICT mode and json_valid() checks, so
++    // malformed input_data could land silently. We migrate to a STRICT table
++    // with a json_valid CHECK on input_data (the column we *know* is JSON
++    // because recordApiLog always JSON.stringifies non-string input).
++    // output_data is left as opaque TEXT (callers pass arbitrary strings).
++    //
++    // Idempotent: detects STRICT via PRAGMA table_list and only swaps if the
++    // existing table is the legacy (non-STRICT) layout.
++    const tableInfo = this.db
++      .prepare("SELECT name, strict FROM pragma_table_list WHERE name = 'api_logs'")
++      .get() as { name: string; strict: number } | undefined;
++
++    const createStrict = `
+       CREATE TABLE IF NOT EXISTS api_logs (
+         id           INTEGER PRIMARY KEY AUTOINCREMENT,
+         tool_name    TEXT NOT NULL,
+-        input_data   TEXT NOT NULL DEFAULT '{}',
++        input_data   TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(input_data)),
+         output_data  TEXT NOT NULL DEFAULT '',
+         duration_ms  INTEGER NOT NULL DEFAULT 0,
+         success      INTEGER NOT NULL DEFAULT 1,
+         called_at    INTEGER NOT NULL
+-      );
++      ) STRICT;
+       CREATE INDEX IF NOT EXISTS idx_api_logs_at ON api_logs(called_at);
+       CREATE INDEX IF NOT EXISTS idx_api_logs_name ON api_logs(tool_name);
+-    `);
++    `;
++
++    if (!tableInfo) {
++      // Fresh DB — create the strict table directly.
++      this.db.exec(createStrict);
++      return;
++    }
++    if (tableInfo.strict === 1) {
++      // Already migrated — guarantee indexes exist and stop.
++      this.db.exec(`
++        CREATE INDEX IF NOT EXISTS idx_api_logs_at ON api_logs(called_at);
++        CREATE INDEX IF NOT EXISTS idx_api_logs_name ON api_logs(tool_name);
++      `);
++      return;
++    }
++
++    // Legacy non-STRICT table present: swap pattern (SQLite cannot ALTER ADD CHECK).
++    this.log.info("Migrating api_logs to STRICT + json_valid(input_data) check");
++    this.db.exec("BEGIN");
++    try {
++      this.db.exec(`
++        CREATE TABLE api_logs_new (
++          id           INTEGER PRIMARY KEY AUTOINCREMENT,
++          tool_name    TEXT NOT NULL,
++          input_data   TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(input_data)),
++          output_data  TEXT NOT NULL DEFAULT '',
++          duration_ms  INTEGER NOT NULL DEFAULT 0,
++          success      INTEGER NOT NULL DEFAULT 1,
++          called_at    INTEGER NOT NULL
++        ) STRICT;
++        INSERT INTO api_logs_new (id, tool_name, input_data, output_data, duration_ms, success, called_at)
++          SELECT id, tool_name,
++                 CASE WHEN json_valid(input_data) THEN input_data ELSE '{}' END,
++                 output_data, duration_ms, success, called_at
++          FROM api_logs;
++        DROP TABLE api_logs;
++        ALTER TABLE api_logs_new RENAME TO api_logs;
++        CREATE INDEX IF NOT EXISTS idx_api_logs_at ON api_logs(called_at);
++        CREATE INDEX IF NOT EXISTS idx_api_logs_name ON api_logs(tool_name);
++      `);
++      this.db.exec("COMMIT");
++      this.log.info("api_logs migrated to STRICT");
++    } catch (err) {
++      this.db.exec("ROLLBACK");
++      throw err;
++    }
+   }
+ 
+   private migrateDedupStatus(): void {
+@@ -679,6 +737,40 @@
+     return rows.map((r) => r.tool_name);
+   }
+ 
++  // Hermes patch (observability audit 2026-04-23): WAL + disk probe so the
++  // hub's health endpoint can distinguish healthy from degraded states.
++  getDbStats(): {
++    journalMode: string;
++    pageSize: number;
++    pageCount: number;
++    dbSizeBytes: number;
++    walSizeBytes: number;
++    walPages: number;
++    integrityOk: boolean;
++  } {
++    const journalMode = (this.db.pragma("journal_mode", { simple: true }) as string) ?? "unknown";
++    const pageSize = Number(this.db.pragma("page_size", { simple: true }) ?? 0);
++    const pageCount = Number(this.db.pragma("page_count", { simple: true }) ?? 0);
++    const dbSizeBytes = pageSize * pageCount;
++    let walSizeBytes = 0;
++    try {
++      const dbFile = (this.db.name as unknown as string) || "";
++      if (dbFile) {
++        const walPath = dbFile + "-wal";
++        const fsMod = require("fs") as typeof import("fs");
++        if (fsMod.existsSync(walPath)) walSizeBytes = fsMod.statSync(walPath).size;
++      }
++    } catch { /* best-effort */ }
++    const walPages = pageSize > 0 ? Math.ceil(walSizeBytes / pageSize) : 0;
++    let integrityOk = true;
++    try {
++      const row = this.db.prepare("PRAGMA quick_check(1)").get() as { quick_check?: string } | { ["quick_check(1)"]?: string } | undefined;
++      const v = row ? (Object.values(row)[0] as string | undefined) : undefined;
++      integrityOk = v === "ok";
++    } catch { integrityOk = false; }
++    return { journalMode, pageSize, pageCount, dbSizeBytes, walSizeBytes, walPages, integrityOk };
++  }
++
+   recordMergeHit(chunkId: string, action: "DUPLICATE" | "UPDATE", reason: string, oldSummary?: string, newSummary?: string): void {
+     const chunk = this.getChunk(chunkId);
+     if (!chunk) return;
