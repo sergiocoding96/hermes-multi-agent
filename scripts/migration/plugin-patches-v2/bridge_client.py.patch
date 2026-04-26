@@ -1,0 +1,38 @@
+--- a/adapters/hermes/memos_provider/bridge_client.py
++++ b/adapters/hermes/memos_provider/bridge_client.py
+@@ -68,11 +68,34 @@
+         self._logs: list[Callable[[dict[str, Any]], None]] = []
+         self._closed = False
+ 
+-        node = node_binary or shutil.which("node") or "node"
++        # Hermes patch (Sprint 3 worker-wiring): two issues fixed here.
++        # (1) `node --experimental-strip-types bridge.cts` does not resolve
++        #     `from "./x.js"` to `x.ts` on Node 22, so the bridge crashes
++        #     importing core/pipeline/orchestrator.js. We use the bundled
++        #     tsx CLI when present — it handles the ESM .js→.ts resolution.
++        # (2) `shutil.which("node")` may pick up Linuxbrew's Node 25, but
++        #     `better-sqlite3` is built for a specific NODE_MODULE_VERSION.
++        #     We deliberately prefer `/usr/bin/node` (Node 22, what the
++        #     binding was rebuilt against on this machine), with explicit
++        #     overrides via `node_binary` arg or MEMOS_NODE_BINARY env.
++        if node_binary:
++            node = node_binary
++        elif os.environ.get("MEMOS_NODE_BINARY"):
++            node = os.environ["MEMOS_NODE_BINARY"]
++        elif Path("/usr/bin/node").exists():
++            node = "/usr/bin/node"
++        else:
++            node = shutil.which("node") or "node"
+         script = bridge_path or str(
+             Path(__file__).resolve().parent.parent.parent.parent / "bridge.cts"
+         )
+         env = {**os.environ, **(extra_env or {})}
++        plugin_root = Path(__file__).resolve().parent.parent.parent.parent
++        tsx_cli = plugin_root / "node_modules" / "tsx" / "dist" / "cli.mjs"
++        if tsx_cli.exists():
++            spawn_cmd = [node, str(tsx_cli), script, f"--agent={agent}"]
++        else:
++            spawn_cmd = [node, "--experimental-strip-types", script, f"--agent={agent}"]
+         self._proc = subprocess.Popen(
+             spawn_cmd,
+             stdin=subprocess.PIPE,

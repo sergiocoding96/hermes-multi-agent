@@ -1,0 +1,67 @@
+--- a/src/ingest/dedup.ts
++++ b/src/ingest/dedup.ts
+@@ -2,6 +2,28 @@
+ import type { SqliteStore } from "../storage/sqlite";
+ import type { Logger } from "../types";
+ 
++// Hermes patch (performance audit 2026-04-23, 1/10 → bounded):
++// Original implementation pulled ALL embeddings via getAllEmbeddings on every
++// dedup call → O(N) scan per ingest, O(N²) write cost overall, P99 12.2s at
++// 6.8k rows under concurrency. Following the pattern already established in
++// storage/vector.ts:vectorSearch, we bound the candidate set to the most
++// recent DEDUP_MAX_SCAN chunks. Tradeoff: a near-duplicate older than the
++// most-recent N chunks won't be caught — acceptable for practical workloads
++// where dedup catches conversational repeats, not archival similarity.
++// Override via env var DEDUP_MAX_SCAN (0 = unbounded, default 10000).
++const DEDUP_MAX_SCAN = (() => {
++  const raw = process.env.DEDUP_MAX_SCAN;
++  if (raw === undefined) return 10_000;
++  const n = Number.parseInt(raw, 10);
++  return Number.isFinite(n) && n >= 0 ? n : 10_000;
++})();
++
++function loadCandidates(store: SqliteStore, ownerFilter?: string[]): Array<{ chunkId: string; vector: number[] }> {
++  return DEDUP_MAX_SCAN > 0
++    ? store.getRecentEmbeddings(DEDUP_MAX_SCAN, ownerFilter)
++    : store.getAllEmbeddings(ownerFilter);
++}
++
+ /**
+  * Check if a new summary embedding is a near-duplicate of any
+  * existing embedding. If similarity >= threshold, return the
+@@ -16,7 +38,7 @@
+   log: Logger,
+   ownerFilter?: string[],
+ ): string | null {
+-  const all = store.getAllEmbeddings(ownerFilter);
++  const all = loadCandidates(store, ownerFilter);
+ 
+   let bestId: string | null = null;
+   let bestScore = 0;
+@@ -30,7 +52,7 @@
+   }
+ 
+   if (bestId && bestScore >= threshold) {
+-    log.debug(`Dedup: found duplicate chunk=${bestId} sim=${bestScore.toFixed(4)}`);
++    log.info(`capture.deduplicated chunk=${bestId} sim=${bestScore.toFixed(4)} (scanned ${all.length})`);
+     return bestId;
+   }
+ 
+@@ -49,7 +71,7 @@
+   log: Logger,
+   ownerFilter?: string[],
+ ): Array<{ chunkId: string; score: number }> {
+-  const all = store.getAllEmbeddings(ownerFilter);
++  const all = loadCandidates(store, ownerFilter);
+   const scored: Array<{ chunkId: string; score: number }> = [];
+ 
+   for (const { chunkId, vector } of all) {
+@@ -62,7 +84,7 @@
+   scored.sort((a, b) => b.score - a.score);
+   const result = scored.slice(0, topN);
+   if (result.length > 0) {
+-    log.debug(`findTopSimilar: found ${result.length} candidates above ${threshold} (best=${result[0].score.toFixed(4)})`);
++    log.info(`findTopSimilar: found ${result.length} candidates above ${threshold} (best=${result[0].score.toFixed(4)}, scanned ${all.length})`);
+   }
+   return result;
+ }
