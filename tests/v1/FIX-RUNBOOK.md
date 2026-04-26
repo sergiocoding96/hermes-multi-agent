@@ -2,6 +2,8 @@
 
 Bootstrap the worktrees, then open **4 fresh** Claude Code Desktop sessions and paste one block per session as the FIRST message. All four sessions run in parallel; no file overlap means no merge conflicts.
 
+> **Two repos:** the bugs span Hermes (`/home/openclaw/Coding/Hermes`) and MemOS (`/home/openclaw/Coding/MemOS`). Each TASK.md has a banner specifying the right repo for its code edits. Worktrees A and C do all their code in MemOS; D does all its code in Hermes; B is split-repo and opens two PRs. The setup script creates Hermes-side briefing worktrees; the agent for each MemOS-side worktree creates its own MemOS worktree as its first action (the TASK.md banner has the exact `git worktree add` command).
+
 For full context: `scripts/worktrees/fix-mvp/README.md`. For the per-worktree brief each session reads: `scripts/worktrees/fix-mvp/<area>/TASK.md`.
 
 ---

@@ -1,5 +1,16 @@
 # Worktree A — Storage write path & delete consistency
 
+> **Repo:** all edits in this worktree happen in the **MemOS repo** at `/home/openclaw/Coding/MemOS`, NOT the Hermes repo. The audit identified file paths like `src/memos/multi_mem_cube/...` and `src/memos/graph_dbs/neo4j.py` — those live only in MemOS. The Hermes worktree at `~/Coding/Hermes-wt/fix-storage` exists as a project-management artifact pointing at this brief; do your code work in a fresh MemOS worktree.
+>
+> **Setup before any code:**
+> ```bash
+> cd /home/openclaw/Coding/MemOS
+> git fetch origin
+> git worktree add ~/Coding/MemOS-wt/fix-storage -b fix/v1-storage-resilience origin/main
+> cd ~/Coding/MemOS-wt/fix-storage
+> ```
+> Push to and PR against the **MemOS repo's `main`**, not Hermes.
+
 You are fixing **two bugs in the v1 MemOS server's storage layer**. Both came out of the 2026-04-26 blind audit (Resilience and Data Integrity reports).
 
 ## Bug 4 (start here — small, 2 hours)

@@ -3,6 +3,12 @@
 #
 # Idempotent. Safe to re-run (existing worktrees skipped).
 #
+# This script creates Hermes-side worktrees that hold the per-bug TASK.md
+# briefs. Worktrees whose code work happens in the MemOS repo (fix-storage,
+# fix-redaction, MemOS-side of fix-auth) instruct the agent to create their
+# own MemOS worktree as their first step — the banner at the top of each
+# TASK.md has the exact `git worktree add` command.
+#
 # Usage:
 #   bash scripts/worktrees/fix-mvp/setup-fix-worktrees.sh        # create
 #   bash scripts/worktrees/fix-mvp/setup-fix-worktrees.sh --dry  # preview
@@ -10,6 +16,8 @@ set -euo pipefail
 
 HERMES_REPO="${HERMES_REPO:-$HOME/Coding/Hermes}"
 HERMES_WT="${HERMES_WT:-$HOME/Coding/Hermes-wt}"
+MEMOS_REPO="${MEMOS_REPO:-$HOME/Coding/MemOS}"
+MEMOS_WT="${MEMOS_WT:-$HOME/Coding/MemOS-wt}"
 BRIEF_DIR="$HERMES_REPO/scripts/worktrees/fix-mvp"
 
 DRY_RUN=0
@@ -21,12 +29,15 @@ warn() { echo -e "${YELLOW}!${NC} $*"; }
 info() { echo -e "${BLUE}→${NC} $*"; }
 fail() { echo -e "${RED}✗${NC} $*"; exit 1; }
 
-# Format: short-name|branch-name|brief-file-relative-to-BRIEF_DIR
+# Format: short-name|branch-name|brief-file-relative-to-BRIEF_DIR|primary-repo
+# primary-repo is "hermes" or "memos" — the repo where the briefing worktree lives.
+# (For split-repo bugs like fix-auth, the briefing worktree lives in Hermes; the
+# agent creates its own MemOS worktree as a follow-up step from the TASK.md banner.)
 WORKTREES=(
-  "fix-storage|fix/v1-storage-resilience|storage/TASK.md"
-  "fix-auth|fix/v1-auth-ratelimit|auth/TASK.md"
-  "fix-redaction|fix/v1-log-redaction|redaction/TASK.md"
-  "fix-auto-capture|fix/v1-auto-capture|auto-capture/TASK.md"
+  "fix-storage|fix/v1-storage-resilience|storage/TASK.md|hermes"
+  "fix-auth|fix/v1-auth-ratelimit|auth/TASK.md|hermes"
+  "fix-redaction|fix/v1-log-redaction|redaction/TASK.md|hermes"
+  "fix-auto-capture|fix/v1-auto-capture|auto-capture/TASK.md|hermes"
 )
 
 make_worktree() {
@@ -55,27 +66,43 @@ make_worktree() {
 }
 
 [[ -d "$HERMES_REPO/.git" ]] || fail "HERMES_REPO not a git repo: $HERMES_REPO"
+[[ -d "$MEMOS_REPO/.git"  ]] || warn "MEMOS_REPO not found at $MEMOS_REPO — agents whose work is MemOS-side will need to point MEMOS_REPO at the right path"
 
 mkdir -p "$HERMES_WT"
+mkdir -p "$MEMOS_WT" 2>/dev/null || true
 
 echo ""
 echo "=== v1 MVP fix sprint — 4 parallel worktrees ==="
 for entry in "${WORKTREES[@]}"; do
-  IFS='|' read -r short branch brief <<<"$entry"
-  make_worktree "$HERMES_REPO" "$HERMES_WT" "$short" "$branch" "$brief"
+  IFS='|' read -r short branch brief primary <<<"$entry"
+  if [[ "$primary" == "hermes" ]]; then
+    make_worktree "$HERMES_REPO" "$HERMES_WT" "$short" "$branch" "$brief"
+  else
+    make_worktree "$MEMOS_REPO" "$MEMOS_WT" "$short" "$branch" "$brief"
+  fi
 done
 
 echo ""
+echo "=== Repo map ==="
+echo "  Hermes:  $HERMES_REPO  (worktrees in $HERMES_WT)"
+echo "  MemOS:   $MEMOS_REPO  (worktrees in $MEMOS_WT)"
+echo ""
+echo "  fix-storage      —  code edits in MemOS (TASK.md banner has setup commands)"
+echo "  fix-auth         —  split: Hermes script + MemOS startup gate (two PRs)"
+echo "  fix-redaction    —  code edits in MemOS"
+echo "  fix-auto-capture —  code edits in Hermes (un-archive deploy/plugins/_archive/memos-toolset first)"
+echo ""
 echo "=== Next step ==="
 echo ""
-echo "Open four fresh Claude Code Desktop sessions, one per worktree:"
+echo "Open four fresh Claude Code Desktop sessions, one per briefing worktree:"
 echo ""
 for entry in "${WORKTREES[@]}"; do
-  IFS='|' read -r short branch _ <<<"$entry"
+  IFS='|' read -r short branch _ _ <<<"$entry"
   echo "  ${BLUE}$HERMES_WT/$short${NC}  →  branch ${GREEN}$branch${NC}"
 done
 echo ""
 echo "For each session, paste the matching block from:"
 echo "  ${BLUE}$HERMES_REPO/tests/v1/FIX-RUNBOOK.md${NC}"
 echo ""
+echo "Each TASK.md has a banner at the top specifying the right repo for code edits."
 echo "All four worktrees can run in parallel — no file overlap."

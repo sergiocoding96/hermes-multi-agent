@@ -1,5 +1,25 @@
 # Worktree B — Auth file restoration & rate limiter
 
+> **Repos:** this worktree's work is split across **two repos** because the bugs are split. Bug 1 is mostly Hermes-side (un-archive the provisioning script + chmod 600 the `.env` files); Bug 5 is MemOS-side (startup gate + rate limiter). You'll open **two PRs**, one per repo.
+>
+> **Setup before any code:**
+> ```bash
+> # Hermes side (provisioning script restoration + .env perms)
+> cd /home/openclaw/Coding/Hermes
+> git fetch origin
+> # Worktree already created at ~/Coding/Hermes-wt/fix-auth on branch fix/v1-auth-ratelimit
+> cd ~/Coding/Hermes-wt/fix-auth
+>
+> # MemOS side (startup gate + rate limiter)
+> cd /home/openclaw/Coding/MemOS
+> git fetch origin
+> git worktree add ~/Coding/MemOS-wt/fix-auth -b fix/v1-auth-ratelimit origin/main
+> ```
+>
+> Two PRs to open at the end:
+> - Hermes repo `main`: `fix(auth-ops): restore provisioning script + chmod 600 profile envs`
+> - MemOS repo `main`: `fix(auth): startup gate + rate-limit + key-prefix BCrypt lookup`
+
 You are fixing **two bugs in the v1 MemOS server's auth surface**. Both came out of the 2026-04-26 blind audit (Zero-Knowledge, Plugin-Integration, and Performance reports).
 
 ## Bug 1 (start here — fastest fix in the entire sprint, 2–4 hours)

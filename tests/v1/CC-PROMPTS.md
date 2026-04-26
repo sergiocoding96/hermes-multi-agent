@@ -1,6 +1,13 @@
 # Claude Code Prompts — paste these on the tower
 
-You're running Claude Code (CC) sessions on the openclaw tower at `/home/openclaw/Coding/Hermes`. Each block below is a complete kickoff prompt for one CC session. Open a fresh CC session, paste the block as the FIRST message, let it run.
+You're running Claude Code (CC) sessions on the openclaw tower. Two repos are involved:
+
+- **Hermes:** `/home/openclaw/Coding/Hermes` — provisioning, plugin source, audit suite, fix briefs
+- **MemOS:**  `/home/openclaw/Coding/MemOS` — server source (`src/memos/...`)
+
+The bugs split across both. Each TASK.md banner specifies which repo its agent edits in. Worktree B is split-repo (two PRs).
+
+Each block below is a complete kickoff prompt for one CC session. Open a fresh CC session, paste the block as the FIRST message, let it run.
 
 Phases that need parallel sessions (Phase 3 = 4 fix sessions; Phase 7b = 8 audit sessions) are already covered by `tests/v1/FIX-RUNBOOK.md` and `tests/v1/RUNBOOK.md` respectively — those docs already contain the kickoff blocks. This file fills in the **glue phases** between them: bootstrap, monitor, merge-with-smoke-test, demo, date-bump, PDF regeneration, ship decision.
 
@@ -83,9 +90,18 @@ Recommend whether to step in for any stalled session (paste the "Status update?"
 
 ---
 
-## Phase 5 — Merge each PR with smoke test (4 sessions, sequential)
+## Phase 5 — Merge each PR with smoke test (5 sessions, sequential)
 
-**Order:** B → C → A → D. Run them in separate sessions, one at a time. Don't merge the next until the smoke test on the previous passes.
+**Order:** B-Hermes → B-MemOS → C → A → D. Five sessions because Worktree B opens **two PRs** (one per repo). Run them in separate sessions, one at a time. Don't merge the next until the smoke test on the previous passes.
+
+PR repo map:
+- `fix(auth-ops)`: **Hermes repo** (un-archive script + chmod 600 envs)
+- `fix(auth)`: **MemOS repo** (startup gate + rate limiter + key-prefix BCrypt)
+- `fix(security)` redaction: **MemOS repo**
+- `fix(storage)`: **MemOS repo**
+- `feat(plugin)` auto-capture: **Hermes repo**
+
+Use `gh pr list -R sergiocoding96/hermes-multi-agent` for Hermes PRs and `gh pr list -R <memos-org>/MemOS` for MemOS PRs.
 
 ### 5.B — Merge auth PR
 
