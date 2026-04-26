@@ -31,12 +31,15 @@ fail() { echo -e "${RED}✗${NC} $*"; exit 1; }
 
 # Format: short-name|branch-name|brief-file-relative-to-BRIEF_DIR|primary-repo
 # primary-repo is "hermes" or "memos" — the repo where the briefing worktree lives.
-# (For split-repo bugs like fix-auth, the briefing worktree lives in Hermes; the
-# agent creates its own MemOS worktree as a follow-up step from the TASK.md banner.)
+# Storage and redaction edit MemOS source only, so their briefing worktree IS the
+# MemOS worktree (no follow-up worktree needed). Auth is split-repo: briefing
+# lives in Hermes (where the script-restoration happens) and the agent creates a
+# MemOS worktree as a follow-up step for the server-side gate + rate limiter.
+# Auto-capture is pure Hermes (plugin source).
 WORKTREES=(
-  "fix-storage|fix/v1-storage-resilience|storage/TASK.md|hermes"
+  "fix-storage|fix/v1-storage-resilience|storage/TASK.md|memos"
   "fix-auth|fix/v1-auth-ratelimit|auth/TASK.md|hermes"
-  "fix-redaction|fix/v1-log-redaction|redaction/TASK.md|hermes"
+  "fix-redaction|fix/v1-log-redaction|redaction/TASK.md|memos"
   "fix-auto-capture|fix/v1-auto-capture|auto-capture/TASK.md|hermes"
 )
 
@@ -87,22 +90,26 @@ echo "=== Repo map ==="
 echo "  Hermes:  $HERMES_REPO  (worktrees in $HERMES_WT)"
 echo "  MemOS:   $MEMOS_REPO  (worktrees in $MEMOS_WT)"
 echo ""
-echo "  fix-storage      —  code edits in MemOS (TASK.md banner has setup commands)"
-echo "  fix-auth         —  split: Hermes script + MemOS startup gate (two PRs)"
-echo "  fix-redaction    —  code edits in MemOS"
-echo "  fix-auto-capture —  code edits in Hermes (un-archive deploy/plugins/_archive/memos-toolset first)"
+echo "=== Worktree locations after this script runs ==="
+for entry in "${WORKTREES[@]}"; do
+  IFS='|' read -r short branch _ primary <<<"$entry"
+  if [[ "$primary" == "hermes" ]]; then
+    printf "  %-18s  %s/%s  →  branch %s  (Hermes)\n" "$short" "$HERMES_WT" "$short" "$branch"
+  else
+    printf "  %-18s  %s/%s  →  branch %s  (MemOS)\n" "$short" "$MEMOS_WT" "$short" "$branch"
+  fi
+done
 echo ""
 echo "=== Next step ==="
 echo ""
-echo "Open four fresh Claude Code Desktop sessions, one per briefing worktree:"
-echo ""
-for entry in "${WORKTREES[@]}"; do
-  IFS='|' read -r short branch _ _ <<<"$entry"
-  echo "  ${BLUE}$HERMES_WT/$short${NC}  →  branch ${GREEN}$branch${NC}"
-done
+echo "Open four fresh Claude Code Desktop sessions, one per worktree above."
+echo "Set each session's working directory to the worktree path shown."
 echo ""
 echo "For each session, paste the matching block from:"
 echo "  ${BLUE}$HERMES_REPO/tests/v1/FIX-RUNBOOK.md${NC}"
 echo ""
-echo "Each TASK.md has a banner at the top specifying the right repo for code edits."
-echo "All four worktrees can run in parallel — no file overlap."
+echo "Notes:"
+echo "  - fix-storage and fix-redaction now sit directly on the MemOS repo (no follow-up worktree needed)."
+echo "  - fix-auth lives on Hermes for the script restoration; agent creates a MemOS worktree as a follow-up per the TASK.md banner (this one is split-repo, two PRs)."
+echo "  - fix-auto-capture sits on Hermes; first action is to un-archive deploy/plugins/_archive/memos-toolset per the TASK.md banner."
+echo "  - All four can run in parallel — no file overlap."

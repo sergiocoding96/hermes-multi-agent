@@ -1,15 +1,19 @@
 # Worktree A — Storage write path & delete consistency
 
-> **Repo:** all edits in this worktree happen in the **MemOS repo** at `/home/openclaw/Coding/MemOS`, NOT the Hermes repo. The audit identified file paths like `src/memos/multi_mem_cube/...` and `src/memos/graph_dbs/neo4j.py` — those live only in MemOS. The Hermes worktree at `~/Coding/Hermes-wt/fix-storage` exists as a project-management artifact pointing at this brief; do your code work in a fresh MemOS worktree.
+> **Repo:** this worktree lives in the **MemOS repo** at `~/Coding/MemOS-wt/fix-storage`, on branch `fix/v1-storage-resilience`. Push and PR against the MemOS repo's `main`. (The setup script puts you here directly — no follow-up worktree creation needed.)
 >
-> **Setup before any code:**
+> **Pre-flight check before any code:** the original plan didn't account for pre-existing MemOS worktrees. Run this first:
 > ```bash
-> cd /home/openclaw/Coding/MemOS
-> git fetch origin
-> git worktree add ~/Coding/MemOS-wt/fix-storage -b fix/v1-storage-resilience origin/main
-> cd ~/Coding/MemOS-wt/fix-storage
+> ls ~/Coding/MemOS-wt/ | grep -iE 'delete|qdrant|storage|resilience'
+> # for any matches that aren't yours:
+> cd ~/Coding/MemOS-wt/<match>
+> git log --oneline -20
+> git diff origin/main...HEAD --stat
+> git diff origin/main...HEAD -- '*neo4j*' '*qdrant*' | grep -B 2 -A 20 "delete_node_by_prams\|vec_db.delete"
+> gh pr list --head $(git branch --show-current) --state all --limit 3
 > ```
-> Push to and PR against the **MemOS repo's `main`**, not Hermes.
+>
+> Decision tree: if a pre-existing worktree already covers Bug 4 (`delete_node_by_prams` modified to call `vec_db.delete`), drop Bug 4 from your scope and do only Bug 2. Coordinate to avoid conflicts. If unclear after investigation, surface to the user before writing any code.
 
 You are fixing **two bugs in the v1 MemOS server's storage layer**. Both came out of the 2026-04-26 blind audit (Resilience and Data Integrity reports).
 
