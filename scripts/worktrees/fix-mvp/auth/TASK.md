@@ -22,6 +22,19 @@
 
 You are fixing **two bugs in the v1 MemOS server's auth surface**. Both came out of the 2026-04-26 blind audit (Zero-Knowledge, Plugin-Integration, and Performance reports).
 
+> **Pre-flight check before touching code:** the storage worktree found a pre-existing `~/Coding/MemOS-wt/fix-delete-api` worktree that wasn't in the original plan. There may be a similar pre-existing worktree like `fix-auth-perf` that overlaps with Bug 5 (rate limiter + key-prefix BCrypt). Run this first:
+>
+> ```bash
+> ls ~/Coding/MemOS-wt/ | grep -iE 'auth|perf|rate'
+> # for any match:
+> cd ~/Coding/MemOS-wt/<match>
+> git log --oneline -20 ; git diff origin/main...HEAD --stat
+> git diff origin/main...HEAD -- '*agent_auth*' '*rate_limit*' | head -200
+> gh pr list --head $(git branch --show-current) --state all --limit 3
+> ```
+>
+> Decision: if a pre-existing worktree already covers Bug 5 (key-prefix lookup in `agent_auth.py` or Redis-config in `rate_limit.py`), drop the overlap from your scope and do only the un-covered parts. Coordinate to avoid conflicts. If unclear after investigation, surface to the user.
+
 ## Bug 1 (start here — fastest fix in the entire sprint, 2–4 hours)
 
 The MemOS server is configured with `MEMOS_AUTH_REQUIRED=true` and `MEMOS_AGENT_AUTH_CONFIG=<path>`, but the file at that path **does not exist** at the deployed location. As a result, every authenticated `/product/*` call returns HTTP 401 — both demo agents (`research-agent` and `email-marketing-agent`) are memory-blind right now.
