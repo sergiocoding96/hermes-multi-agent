@@ -1,5 +1,16 @@
 # Worktree C — Secret redaction across logs and stored memories
 
+> **Repo:** all edits in this worktree happen in the **MemOS repo** at `/home/openclaw/Coding/MemOS`, NOT the Hermes repo. Files like `src/memos/core/redactor.py` (new) and `src/memos/mem_scheduler/task_schedule_modules/handlers/add_handler.py` live only in MemOS. The Hermes worktree at `~/Coding/Hermes-wt/fix-redaction` exists as a project-management artifact pointing at this brief; do your code work in a fresh MemOS worktree.
+>
+> **Setup before any code:**
+> ```bash
+> cd /home/openclaw/Coding/MemOS
+> git fetch origin
+> git worktree add ~/Coding/MemOS-wt/fix-redaction -b fix/v1-log-redaction origin/main
+> cd ~/Coding/MemOS-wt/fix-redaction
+> ```
+> Push to and PR against the **MemOS repo's `main`**, not Hermes.
+
 You are fixing **two related security bugs in the v1 MemOS server**. Both came out of the 2026-04-26 blind audit (Zero-Knowledge and Observability reports).
 
 The system today logs LLM prompts and memory content unredacted, and the MemReader extractor stores secrets verbatim into Qdrant + Neo4j. If a user pastes an API key into a chat, that key ends up on disk in three places (log file, Qdrant vector text, Neo4j node).

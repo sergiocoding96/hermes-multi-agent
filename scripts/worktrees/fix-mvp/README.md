@@ -4,16 +4,23 @@ Parallel-worktree plan for the **5 must-fix items** from the v1 MVP-readiness re
 
 Four worktrees run in parallel. Each is a self-contained brief — paste one kickoff block per fresh Claude Code session and let it run to completion.
 
-## The four worktrees
+## The four worktrees — repo split
 
-| # | Worktree | Branch | Bugs fixed | Effort | Files touched |
+The bugs span **two repos** because the v1 stack is split:
+
+- **Hermes** (`/home/openclaw/Coding/Hermes`, GitHub: `sergiocoding96/hermes-multi-agent`) — provisioning scripts, profile envs, the `memos-toolset` plugin
+- **MemOS** (`/home/openclaw/Coding/MemOS`) — the actual server source under `src/memos/...`
+
+Each TASK.md banner specifies exactly which repo its agent edits in. The setup script creates Hermes-side worktrees as project-management artifacts; agents whose work is MemOS-side then create their own MemOS worktree from the MemOS repo (the TASK.md banner has the exact `git worktree add` command).
+
+| # | Worktree (briefing dir) | Branch | Repo for code edits | Bugs fixed | Effort |
 |---|---|---|---|---|---|
-| A | `fix-storage` | `fix/v1-storage-resilience` | Bug 2 (silent data loss on dep outage), Bug 4 (delete leaves Qdrant orphans) | 2–3 days | `multi_mem_cube/single_cube.py`, `vec_dbs/qdrant.py`, `graph_dbs/neo4j.py`, scheduler |
-| B | `fix-auth` | `fix/v1-auth-ratelimit` | Bug 1 (missing `agents-auth.json` + startup gate), Bug 5 (rate limiter Redis fallback + BCrypt key-prefix lookup) | 1–2 days | `api/server_api.py`, `api/middleware/agent_auth.py`, `api/middleware/rate_limit.py`, `deploy/scripts/setup-memos-agents.py` |
-| C | `fix-redaction` | `fix/v1-log-redaction` | Bug 3 (secrets in logs + secrets in extracted memories) | 1 day | NEW `core/redactor.py`, MemReader pipeline hooks, `mem_scheduler/.../add_handler.py` |
-| D | `fix-auto-capture` | `fix/v1-auto-capture` | Functionality MIN driver — implement the v1.0.3 plugin auto-capture hook | 2–3 days | `~/.hermes/plugins/memos-toolset/` + plugin tests |
+| A | `fix-storage` | `fix/v1-storage-resilience` | **MemOS** | Bug 2 (silent data loss on dep outage), Bug 4 (delete leaves Qdrant orphans) | 2–3 days |
+| B | `fix-auth` | `fix/v1-auth-ratelimit` | **BOTH** (Hermes for script-restoration + chmod; MemOS for startup gate + rate limiter) | Bug 1, Bug 5 | 1–2 days |
+| C | `fix-redaction` | `fix/v1-log-redaction` | **MemOS** | Bug 3 (secrets in logs + secrets in extracted memories) | 1 day |
+| D | `fix-auto-capture` | `fix/v1-auto-capture` | **Hermes** (un-archive `deploy/plugins/_archive/memos-toolset` first) | Functionality MIN driver | 2–3 days |
 
-These four together address every P0 from the audit synthesis. Worktrees A, B, C are server-side; worktree D is plugin-side. **Zero file overlap between any two worktrees** → no merge conflicts during parallel work.
+These four together address every P0 from the audit synthesis. Worktree B opens **two PRs** (one per repo); the others open one PR each, totaling **5 PRs**. **Zero file overlap between any two worktrees** → no merge conflicts during parallel work.
 
 ## Quick start
 
@@ -31,7 +38,12 @@ Then open four fresh Claude Code Desktop sessions, one per worktree. For each se
 
 ## Order
 
-All four can run in parallel. **No dependency between them.** They merge to `main` independently when each lands.
+All four can run in parallel. **No dependency between them** at the source-edit level — each worktree owns its own files.
+
+**One operational dependency:** Worktree D (auto-capture) needs `agents-auth.json` to exist for its smoke test to pass; that file comes from B's Hermes-side PR. So:
+
+- D's code work can start any time.
+- D's smoke test should run **after** B's Hermes-side PR merges.
 
 If you must serialize for cost reasons:
 - **First:** B (`fix-auth`) — fastest fix, unblocks every other audit (without `agents-auth.json` the system is 401-on-everything)

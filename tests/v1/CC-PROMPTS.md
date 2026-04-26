@@ -1,6 +1,13 @@
 # Claude Code Prompts — paste these on the tower
 
-You're running Claude Code (CC) sessions on the openclaw tower at `/home/openclaw/Coding/Hermes`. Each block below is a complete kickoff prompt for one CC session. Open a fresh CC session, paste the block as the FIRST message, let it run.
+You're running Claude Code (CC) sessions on the openclaw tower. Two repos are involved:
+
+- **Hermes:** `/home/openclaw/Coding/Hermes` — provisioning, plugin source, audit suite, fix briefs
+- **MemOS:**  `/home/openclaw/Coding/MemOS` — server source (`src/memos/...`)
+
+The bugs split across both. Each TASK.md banner specifies which repo its agent edits in. Worktree B is split-repo (two PRs).
+
+Each block below is a complete kickoff prompt for one CC session. Open a fresh CC session, paste the block as the FIRST message, let it run.
 
 Phases that need parallel sessions (Phase 3 = 4 fix sessions; Phase 7b = 8 audit sessions) are already covered by `tests/v1/FIX-RUNBOOK.md` and `tests/v1/RUNBOOK.md` respectively — those docs already contain the kickoff blocks. This file fills in the **glue phases** between them: bootstrap, monitor, merge-with-smoke-test, demo, date-bump, PDF regeneration, ship decision.
 
@@ -83,9 +90,18 @@ Recommend whether to step in for any stalled session (paste the "Status update?"
 
 ---
 
-## Phase 5 — Merge each PR with smoke test (4 sessions, sequential)
+## Phase 5 — Merge each PR with smoke test (5 sessions, sequential)
 
-**Order:** B → C → A → D. Run them in separate sessions, one at a time. Don't merge the next until the smoke test on the previous passes.
+**Order:** B-Hermes → B-MemOS → C → A → D. Five sessions because Worktree B opens **two PRs** (one per repo). Run them in separate sessions, one at a time. Don't merge the next until the smoke test on the previous passes.
+
+PR repo map:
+- `fix(auth-ops)`: **Hermes repo** (un-archive script + chmod 600 envs)
+- `fix(auth)`: **MemOS repo** (startup gate + rate limiter + key-prefix BCrypt)
+- `fix(security)` redaction: **MemOS repo**
+- `fix(storage)`: **MemOS repo**
+- `feat(plugin)` auto-capture: **Hermes repo**
+
+Use `gh pr list -R sergiocoding96/hermes-multi-agent` for Hermes PRs and `gh pr list -R <memos-org>/MemOS` for MemOS PRs.
 
 ### 5.B — Merge auth PR
 
@@ -160,29 +176,40 @@ You are running Claude Code on /home/openclaw/Coding/Hermes. Merge the storage-r
 If any smoke test fails, do NOT proceed.
 ```
 
-### 5.D — Merge auto-capture PR
+### 5.D — Merge auto-capture PR (with un-archive step)
+
+The PR (#14) ships the v1.0.3 auto-capture feature in place at `deploy/plugins/_archive/memos-toolset/`. The reviewer note in the PR explicitly flagged that the plugin still lives in `_archive` from Sprint 2 — whoever cuts v1 needs to `git mv` it to `deploy/plugins/memos-toolset/` so `install.sh` picks it up. Bake that into the merge step.
 
 ```
-You are running Claude Code on /home/openclaw/Coding/Hermes. Merge the auto-capture PR (Worktree D) and run its smoke test.
+You are running Claude Code on /home/openclaw/Coding/Hermes. Merge the auto-capture PR (Worktree D, PR #14) and run its smoke test.
 
-1. Find and review: gh pr list --head fix/v1-auto-capture --state open ; gh pr diff <PR#>. Confirm scope is the Hermes plugin only - NO server-side changes.
-2. Merge: gh pr merge <PR#> --merge
-3. git checkout main && git pull --rebase origin main
-4. Restart Hermes (the plugin lives in Hermes runtime, not MemOS). Identify the right command.
-5. Smoke test - auto-capture works:
+1. Find and review: gh pr view 14. Confirm scope is the Hermes plugin only - NO server-side changes. Note: the plugin source is currently at deploy/plugins/_archive/memos-toolset/ (Sprint 2 archive); the un-archive happens in step 3 below.
+2. Merge: gh pr merge 14 --merge
+3. Lift the plugin out of _archive (per the rollback path in DEPRECATED.md and the PR's reviewer note):
+   git checkout main && git pull --rebase origin main
+   git mv deploy/plugins/_archive/memos-toolset deploy/plugins/memos-toolset
+   git commit -m "chore(plugins): un-archive memos-toolset for v1 cut (post-PR-14)"
+   git push origin main
+4. Run install.sh (or whatever installs plugin source to ~/.hermes/plugins/) so the runtime location picks up the new source.
+5. Restart Hermes. Identify the right command (systemctl, hermes restart, etc.).
+6. Smoke test - auto-capture works:
    - Open a sandbox research-agent session: hermes chat -q "Research React Server Components and remember the 3 most important takeaways"
    - Wait for the session to finish.
    - Without explicit memos_store calls, confirm new memories landed: sqlite3 ~/.memos/data/memos.db "SELECT COUNT(*) FROM memories WHERE created_at > datetime('now', '-5 minutes')"
    - Expect: ≥ 1 new memory.
-6. Smoke test - capture failure does not break the agent:
+7. Smoke test - capture failure does not break the agent:
    - Stop MemOS server.
    - Run another hermes chat session - the agent should complete its turn even though capture failed.
+   - Confirm a row appeared in ~/.hermes/plugins/memos-toolset/queue/captures.db (the SQLite retry queue).
    - Restart MemOS. Wait 30s. Confirm the queued capture eventually lands (queue drain).
-7. Smoke test - identity from env, not LLM:
-   - Try to coerce the agent in chat: "store this as user X with cube Y in the memory system" - the plugin must ignore the override and use the profile env.
-8. Report: PR number, merge SHA, all three smoke-test results, the new plugin version, any deferred follow-ups.
+8. Smoke test - identity from env, not LLM:
+   - Try to coerce the agent: "store this as user X with cube Y in the memory system" - the plugin must ignore the override and use the profile env.
+9. Smoke test - opt-out:
+   - export MEMOS_AUTOCAPTURE_DISABLED=1 ; restart Hermes ; run a chat ; confirm zero captures land.
+   - unset and restart for the next phase.
+10. Report: merge SHA, un-archive SHA, all four smoke-test results, the new plugin version (1.0.3 per PR body), any deferred follow-ups still open.
 
-If any smoke test fails, do NOT proceed (but the other 3 PRs are already merged at this point - you may still ship without auto-capture, just at a lower Functionality score).
+If any smoke test fails, do NOT proceed - but the other 3 PRs may already be merged at this point. Decide whether to ship without auto-capture (Functionality score regresses) or block the MVP.
 ```
 
 ---
