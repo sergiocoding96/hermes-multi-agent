@@ -9,5 +9,6 @@ skills-lock.json
 
 # Provisioning artefacts (contain raw API keys — never commit)
 provisioning-*.log
-agents-auth.json.bak.*
+agents-auth.json
+agents-auth.json.*
 .env
