@@ -1,0 +1,12 @@
+# Hermes + MemOS cron entries (Sprint 4 reproducible deploy).
+# Append to user crontab via:
+#   crontab -l 2>/dev/null > /tmp/cron.bak
+#   cat /tmp/cron.bak deploy/cron/hermes-memos.crontab | crontab -
+# Or use deploy/scripts/install-infra.sh.
+
+# Refresh CEO memos-hub bearer token daily (24h TTL on hub-issued tokens).
+@daily /home/openclaw/Coding/Hermes/scripts/ceo/refresh-ceo-token.sh >> /home/openclaw/.hermes/logs/ceo-token-refresh.log 2>&1
+
+# Push new memtensor traces from v2 worker SQLite to v1.0.3 hub every 5 min
+# (fills the gap until upstream ships v2 sharing.role=client).
+*/5 * * * * /usr/bin/python3 /home/openclaw/Coding/Hermes/scripts/migration/hub-sync.py research-agent >> /home/openclaw/.hermes/logs/hub-sync.log 2>&1
