@@ -90,6 +90,26 @@ for plugin_dir in "$REPO_DIR/plugins"/*/; do
     ok "Plugin: $plugin_name"
 done
 
+# Mirror plugins into every existing profile.
+# Hermes resolves HERMES_HOME to <profile_dir> when invoked with `-p <name>`,
+# and plugin discovery only scans <HERMES_HOME>/plugins/ — NOT the global
+# ~/.hermes/plugins/. Without this mirror, profile-scoped chats never load
+# the plugin (no register(), no post_llm_call hook, no auto-capture).
+# Symlinks (not copies) so a future re-run picks up updates atomically.
+info "Mirroring plugins into profiles..."
+shopt -s nullglob
+for profile_dir in "$HERMES_HOME/profiles"/*/; do
+    [ -d "$profile_dir" ] || continue
+    profile_plugins="${profile_dir%/}/plugins"
+    mkdir -p "$profile_plugins"
+    for plugin_dir in "$HERMES_HOME/plugins"/*/; do
+        plugin_name=$(basename "$plugin_dir")
+        ln -sfn "$plugin_dir" "$profile_plugins/$plugin_name"
+    done
+    ok "Mirrored plugins into $(basename "$profile_dir")"
+done
+shopt -u nullglob
+
 # ---------------------------------------------------------------
 # 5. Clone shared skills repo
 # ---------------------------------------------------------------
