@@ -98,3 +98,9 @@ Outputs:
 - If you want to run upstream directly, see:
   - `https://github.com/sergiocoding96/openclaw-video-skill-pipeline`
 
+## Windows build + troubleshooting notes
+
+If you need the full Windows “requirements + problems/fixes” writeup for future setups, see:
+
+- `docs/screenpipe/WINDOWS.md`
+

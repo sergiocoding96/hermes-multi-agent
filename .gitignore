@@ -3,6 +3,7 @@ node_modules/
 .tools/
 tools/
 screenpipe-build.log
+screenpipe-logs/
 .memos/
 .claude/
 .agents/
