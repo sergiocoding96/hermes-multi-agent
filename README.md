@@ -17,9 +17,42 @@ curl -fsSL https://hermes-agent.nousresearch.com/install | bash
 # 3. Clone this repo and run the deploy installer
 git clone https://github.com/sergiocoding96/hermes-multi-agent
 cd hermes-multi-agent/deploy && ./install.sh
+
+# 4. Bootstrap the web stack (Firecrawl + SearXNG + Camofox)
+cd .. && ./setup-web-stack.sh
 ```
 
 See [`deploy/README.md`](deploy/README.md) for the full install reference.
+
+## External Services
+
+This repo is the **glue layer** — it orchestrates external services rather
+than vendoring them. An installing agent (or human) needs to know where each
+piece comes from and how it's kept current.
+
+| Service | Source | How `setup-web-stack.sh` handles it | Update strategy |
+|---------|--------|--------------------------------------|-----------------|
+| **Firecrawl** (search + scrape API) | [`mendableai/firecrawl`](https://github.com/mendableai/firecrawl) on `main` | Cloned to `$FIRECRAWL_DIR` (default `~/.openclaw/workspace/firecrawl`) if missing | `cd $FIRECRAWL_DIR && git pull && docker compose up -d --build` |
+| **Playwright service** (JS rendering) | Bundled inside Firecrawl's `docker-compose.yaml` | Comes for free with the Firecrawl clone | Updates with Firecrawl |
+| **SearXNG** (meta-search) | Upstream `searxng/searxng` Docker image | Patched in via a `docker-compose.override.yaml` we own (in `$FIRECRAWL_DIR`) plus `searxng-settings.yml` | Image is `:latest`, pulls fresh on `up -d --build` |
+| **Camofox** (anti-bot browser) | npm package `@askjo/camofox-browser`, installed by Hermes Agent | Native modules rebuilt if Node version mismatched, started on `:9377` | Updated when you `npm install` in `~/.hermes/hermes-agent` |
+| **Neo4j + Qdrant** (MemOS deps) | `MemOS/docker/docker-compose.yml` in the patched MemOS fork | Started by `start-memos.sh` | Updates with MemOS |
+
+### Why no pinned commits
+
+The web stack tracks **upstream `main`** for Firecrawl and `:latest` for
+SearXNG. Pinning would mean running a stale anti-bot stack against a moving
+target (Cloudflare, Akamai, bot-detection vendors). The cost: an upstream
+breaking change occasionally requires updating the SearXNG override. The
+benefit: capability stays current without manual bumps.
+
+### When upstream Firecrawl changes break things
+
+Our SearXNG integration uses Docker Compose's **native override mechanism**
+(`docker-compose.override.yaml`), not a patch against upstream's compose. So
+upstream renames/restructures don't silently break our overlay. If a real
+breakage happens (e.g. networking model changes), update
+`setup-web-stack.sh`'s override block; do not vendor a fork of Firecrawl.
 
 ## Repo Layout
 

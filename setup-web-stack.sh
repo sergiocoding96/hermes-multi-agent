@@ -3,13 +3,15 @@
 # Run this on a fresh deployment to get: Firecrawl + SearXNG + Camofox
 set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 ok()   { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${YELLOW}!${NC} $1"; }
 fail() { echo -e "${RED}✗${NC} $1"; }
+info() { echo -e "${BLUE}→${NC} $1"; }
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 FIRECRAWL_DIR="${FIRECRAWL_DIR:-$HOME/.openclaw/workspace/firecrawl}"
+FIRECRAWL_REPO="${FIRECRAWL_REPO:-https://github.com/mendableai/firecrawl}"
 CAMOFOX_DIR="$HERMES_HOME/hermes-agent/node_modules/@askjo/camofox-browser"
 NODE_BIN=$(which node 2>/dev/null || echo "/usr/bin/node")
 
@@ -48,6 +50,45 @@ if id -nG | grep -qw docker || grep -q "docker.*$(whoami)" /etc/group 2>/dev/nul
 else
     warn "User not in docker group — you may need sudo for docker commands"
     warn "Fix: sudo usermod -aG docker \$USER && newgrp docker"
+fi
+
+echo ""
+
+# ---------------------------------------------------------------
+# 1b. Bootstrap Firecrawl from upstream if missing
+# ---------------------------------------------------------------
+# We deliberately track upstream main rather than pinning a commit:
+# Firecrawl + Playwright + anti-bot logic evolves quickly, and pinning
+# would mean running a stale anti-bot stack against a moving target
+# (Cloudflare, Akamai, etc). To stay current after the initial clone:
+#     cd $FIRECRAWL_DIR && git pull && docker compose up -d --build
+echo "--- Firecrawl ---"
+
+if [ ! -d "$FIRECRAWL_DIR/.git" ]; then
+    if [ -d "$FIRECRAWL_DIR" ]; then
+        fail "$FIRECRAWL_DIR exists but is not a git checkout. Refusing to overwrite."
+        fail "Move/remove it and re-run, or set FIRECRAWL_DIR to a fresh path."
+        exit 1
+    fi
+    info "Cloning Firecrawl from $FIRECRAWL_REPO → $FIRECRAWL_DIR"
+    mkdir -p "$(dirname "$FIRECRAWL_DIR")"
+    if ! git clone "$FIRECRAWL_REPO" "$FIRECRAWL_DIR"; then
+        fail "Clone failed. Check network / repo URL ($FIRECRAWL_REPO) and re-run."
+        exit 1
+    fi
+    ok "Cloned Firecrawl (tracking upstream main)"
+else
+    ok "Firecrawl present at $FIRECRAWL_DIR"
+fi
+
+# Bootstrap .env from upstream's example so SEARXNG_ENDPOINT can be appended later.
+if [ ! -f "$FIRECRAWL_DIR/.env" ]; then
+    if [ -f "$FIRECRAWL_DIR/.env.example" ]; then
+        cp "$FIRECRAWL_DIR/.env.example" "$FIRECRAWL_DIR/.env"
+        ok "Copied .env.example → .env (review and fill in API keys before production use)"
+    else
+        warn "No .env or .env.example in $FIRECRAWL_DIR — upstream layout may have changed."
+    fi
 fi
 
 echo ""
@@ -118,14 +159,39 @@ else
 fi
 
 # ---------------------------------------------------------------
-# 3. Ensure SearXNG is in docker-compose
+# 3. Add SearXNG service via docker-compose.override.yaml
 # ---------------------------------------------------------------
+# Use Docker Compose's native override mechanism rather than patching
+# upstream's docker-compose.yaml. Compose auto-merges override.yaml at
+# runtime, so this stays valid even when upstream Firecrawl renames or
+# restructures its compose file. We own the override; they own the base.
+#
+# Legacy installs may still have searxng wired directly into the main
+# compose — leave those alone to avoid double-defining the service.
 COMPOSE_FILE="$FIRECRAWL_DIR/docker-compose.yaml"
-if grep -q "searxng" "$COMPOSE_FILE" 2>/dev/null; then
-    ok "SearXNG already in docker-compose.yaml"
+[ -f "$COMPOSE_FILE" ] || COMPOSE_FILE="$FIRECRAWL_DIR/docker-compose.yml"
+OVERRIDE_FILE="$FIRECRAWL_DIR/docker-compose.override.yaml"
+
+if [ -f "$COMPOSE_FILE" ] && grep -q "searxng" "$COMPOSE_FILE"; then
+    ok "SearXNG already integrated into main compose (legacy install)"
+elif [ -f "$OVERRIDE_FILE" ] && grep -q "searxng" "$OVERRIDE_FILE"; then
+    ok "SearXNG already present in docker-compose.override.yaml"
 else
-    warn "SearXNG not found in docker-compose.yaml — add it manually:"
-    echo "  See CLAUDE.md or the Firecrawl docker-compose.yaml in this repo"
+    cat > "$OVERRIDE_FILE" << 'OVERRIDE_EOF'
+# Hermes Web Stack — SearXNG override
+# Owned by hermes-multi-agent (sergiocoding96/hermes-multi-agent).
+# Compose auto-merges this with the upstream Firecrawl compose at runtime,
+# so upstream layout changes don't break us.
+services:
+  searxng:
+    image: searxng/searxng:latest
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+OVERRIDE_EOF
+    ok "Wrote SearXNG override → $OVERRIDE_FILE"
 fi
 
 # ---------------------------------------------------------------
