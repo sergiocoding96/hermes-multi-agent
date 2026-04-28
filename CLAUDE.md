@@ -2,17 +2,20 @@
 
 ## 🚨 Active sprint — read this first
 
-**Sprint 2 in progress: migrating from MemOS server (Product 1) to `@memtensor/memos-local-hermes-plugin` (Product 2).**
+**Sprint 2 reverted: `@memtensor/memos-local-plugin` v2 deprecated. v1 (MemOS server) is the production target. v1 fix sprint is complete; awaiting re-audit.**
 
-Any new agent working in this repo (especially on branches starting with `feat/migrate-*`, `wire/*`, `docs/write-v2-*`, `hermes/*`) should read these before acting:
+Any new agent working in this repo should read these before acting:
 
-1. **Master plan:** [`memos-setup/learnings/2026-04-20-v2-migration-plan.md`](memos-setup/learnings/2026-04-20-v2-migration-plan.md) — why we're migrating, 5-stage plan, rollback
-2. **Execution guide:** [`scripts/worktrees/migration/README.md`](scripts/worktrees/migration/README.md) — which session runs what, in what order
-3. **Sprint 1 history:** [`memos-setup/learnings/2026-04-20-sprint-merge-log.md`](memos-setup/learnings/2026-04-20-sprint-merge-log.md) — what we shipped in the server-hardening sprint (scored 9.1/10)
+1. **Decision doc (current):** [`memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md`](memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md) — why v2 was deprecated, what was fixed in v1, what's deferred, what's next
+2. **MVP-readiness brief:** [`tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf`](tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf) — pre-fix audit + remediation plan
+3. **Two-repo team explainer:** [`docs/architecture/two-repos.pdf`](docs/architecture/two-repos.pdf) — how Hermes (this repo) and MemOS (`sergiocoding96/MemOS`, your fork) fit together
+4. **Operator runbook:** [`tests/v1/STEP-BY-STEP.md`](tests/v1/STEP-BY-STEP.md) and [`tests/v1/CC-PROMPTS.md`](tests/v1/CC-PROMPTS.md) — phase-by-phase commands for fix → re-audit → ship
+5. **Sprint 1 history (still relevant):** [`memos-setup/learnings/2026-04-20-sprint-merge-log.md`](memos-setup/learnings/2026-04-20-sprint-merge-log.md) — what was shipped in the original v1 hardening sprint
+6. **Superseded — historical only:** [`memos-setup/learnings/2026-04-20-v2-migration-plan.md`](memos-setup/learnings/2026-04-20-v2-migration-plan.md) (the original v2 migration plan; the audit results are in the decision doc above)
 
-If you are working inside a **worktree** under `~/Coding/Hermes-wt/`, read the `TASK.md` in that directory — it's your full brief.
+If you are working inside a **worktree** under `~/Coding/Hermes-wt/` or `~/Coding/MemOS-wt/`, read the `TASK.md` in that directory — it's your full brief.
 
-Sprint 2 replaces the MemOS server with a local plugin. Don't assume the server is authoritative — check the master plan for current state.
+**Sprint 2 status (2026-04-27):** v2 audit failed (mean 2.4/10, min 1/10). v1 audit (clean re-run) found a fixable system at mean 5.2/10 with five surgical bugs. All five fixed across 6 PRs (Hermes #14/#15/#16, MemOS #6/#7/#8). v2 stays as a dormant spike; do not enable in production.
 
 ## Working Rules
 - **ALWAYS use parallel agents for independent tasks.** When multiple fixes, tests, or investigations can run simultaneously, launch them all in one message. Never serialize work that can be parallelized.
