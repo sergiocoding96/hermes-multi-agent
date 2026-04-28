@@ -1,5 +1,8 @@
 # *.pdf — now included
 node_modules/
+.tools/
+tools/
+screenpipe-build.log
 .memos/
 .claude/
 .agents/
