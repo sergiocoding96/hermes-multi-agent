@@ -1,14 +1,21 @@
-# CEO v1 Scripts — Bash Access to MemOS v1
+# CEO v1 Interfaces — MCP + Bash Access to MemOS v1
 
-These scripts give the CEO Claude Code session read/write access to the MemOS
-**v1 server** at `http://localhost:8001`. They replace the v2 hub-targeted
-versions (`memos-search.sh`, `memos-write.sh`, `provision-*-token.sh`,
-`refresh-ceo-token.sh`, `memos-hub-mcp/`) with a v1-native equivalent.
+This directory gives the CEO Claude Code session read/write access to the MemOS **v1 server** at `http://localhost:8001`. It replaces the v2 hub-targeted setup (`memos-search.sh`, `memos-write.sh`, `provision-*-token.sh`, `refresh-ceo-token.sh`, and the v2-hub backend behind `memos-hub-mcp/`) with v1-native equivalents.
 
-The relevant decision context is in
-[`memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md`](../../memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md):
-v2 was deprecated; v1 is the production target. v1 keys do not expire, so the
-daily token-refresh cron is gone with v2.
+The relevant decision context is in [`memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md`](../../memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md): v2 was deprecated; v1 is the production target. v1 keys do not expire, so the daily token-refresh cron is gone with v2.
+
+---
+
+## Two interfaces, two audiences
+
+| Interface | Audience | Primary use |
+|---|---|---|
+| **MCP server** at `memos-hub-mcp/` | The CEO Claude Code session on Paperclip | Native LLM tool calls — `memos_search`, `memos_recent`, `memos_list_skills` |
+| **Bash scripts** (`memos-search-v1.sh`, `memos-write-v1.sh`) | Operators in a shell, cron, manual probing | Shell-level work, debugging, scripted writes |
+
+Both layers read the same env vars and call the same v1 endpoints. They're complementary, not redundant: MCP for the LLM session because Claude Code consumes MCP tools natively; Bash for everything that runs outside an LLM context.
+
+The MCP server preserves the original v2-era server name (`memos-hub`) and tool signatures so any existing `claude.json` registration keeps working without re-registration. See [`memos-hub-mcp/README.md`](memos-hub-mcp/README.md) for the MCP-side usage details.
 
 ---
 
@@ -20,28 +27,10 @@ daily token-refresh cron is gone with v2.
 | Auth | 24h JWT, daily cron refresh | Long-lived BCrypt-hashed agent key, no refresh |
 | Cube model | Hub federates per-agent SQLite | Single MemOS server with `CompositeCubeView` for multi-cube reads |
 | Cross-agent search | `/api/v1/hub/search` | `/product/search` with multiple `readable_cube_ids` |
-| MCP server | Bundled `memos-hub-mcp/` | None (option **b** below) |
+| MCP server | `memos-hub-mcp/` (called the v2 hub) | `memos-hub-mcp/` (calls v1 server, same interface) |
+| Skills enumeration | `/api/v1/hub/skills` | Not yet supported on v1; tool returns empty + note |
 
----
-
-## MCP integration decision: **(b) — drop the dedicated MCP server**
-
-The CEO uses the bash scripts in this directory directly via the Bash tool.
-There is no `memos-server-mcp/` companion, by deliberate choice:
-
-- The Hermes [`memos-toolset`](../../deploy/plugins/memos-toolset) plugin is
-  single-cube. It already covers worker agents writing/searching their own
-  cube. The CEO's distinguishing capability is *multi-cube reads*, which
-  these bash scripts handle by accepting `MEMOS_READABLE_CUBE_IDS` and
-  emitting them in the request body.
-- Adding a v1 MCP server would duplicate the curl logic already in these
-  scripts without buying any new capability. If a CEO-specific tool need
-  surfaces later (e.g. server-side dedup, or cross-cube delete), revisit
-  option (a) at that point.
-
-If the CEO is ever bridged into a Hermes worker process, the existing
-`memos-toolset` plugin works as-is for write paths against `MEMOS_CUBE_ID=ceo-cube`;
-multi-cube reads still go through the bash scripts.
+The MCP server's tool surface is identical between the two backends — same names, same parameters, same response shapes (the v1 backend projects v1 responses onto the v2-shaped `hits[]` array internally so consumers see no change).
 
 ---
 
@@ -83,6 +72,22 @@ multi-cube reads still go through the bash scripts.
 ---
 
 ## Quick start
+
+### From a Claude Code session (CEO)
+
+If the MCP server is registered (see [`memos-hub-mcp/README.md`](memos-hub-mcp/README.md) for the one-time `claude mcp add` command), Claude Code can just call the tools:
+
+```
+Use memos_search("hydrazine rocket fuel") to find what research-agent and
+email-marketing-agent know about this.
+
+Use memos_recent(limit=10) to see the last 10 memories across all cubes
+the CEO has read access to.
+```
+
+No bash, no credentials in the LLM context.
+
+### From a shell (operator)
 
 ```bash
 # 1. Source the CEO profile (the scripts auto-load it if CEO_ENV_FILE is unset
