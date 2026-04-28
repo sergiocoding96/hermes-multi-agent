@@ -82,13 +82,24 @@ done
 # ---------------------------------------------------------------
 info "Deploying plugins..."
 
+shopt -s nullglob
 for plugin_dir in "$REPO_DIR/plugins"/*/; do
     plugin_name=$(basename "$plugin_dir")
+    # Skip convention-named non-plugin dirs (e.g. _archive/ holds
+    # deprecated plugins kept for reference but not deployed).
+    [[ "$plugin_name" == _* ]] && continue
+    # Skip empty dirs to avoid `cp .../*` failing the no-match glob
+    # under set -euo pipefail.
+    if [ -z "$(ls -A "$plugin_dir" 2>/dev/null)" ]; then
+        warn "Skipping empty plugin dir: $plugin_name"
+        continue
+    fi
     TARGET="$HERMES_HOME/plugins/$plugin_name"
     mkdir -p "$TARGET"
     cp -r "$plugin_dir"* "$TARGET/"
     ok "Plugin: $plugin_name"
 done
+shopt -u nullglob
 
 # Mirror plugins into every existing profile.
 # Hermes resolves HERMES_HOME to <profile_dir> when invoked with `-p <name>`,
