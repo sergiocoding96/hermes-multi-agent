@@ -1,2 +1,6 @@
 # Allow requirements.txt (root gitignore blocks *.txt globally)
 !requirements.txt
+
+# Python bytecode (generated when tests import server.py)
+__pycache__/
+*.pyc
