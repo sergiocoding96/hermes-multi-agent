@@ -2,9 +2,12 @@
 """
 MCP server for the Claude Code CEO session — v1 MemOS server edition.
 
-Exposes three tools (interface unchanged from the v2 hub edition):
+Exposes four tools (interface unchanged from the v2 hub edition, plus
+memos_store added so the CEO can persist memories without dropping to
+the bash scripts):
   memos_search       — FTS + vector search across configured agent cubes
-  memos_list_skills  — Skill listing (v1 has no skills endpoint; returns empty + note)
+  memos_store        — Write a memory into MEMOS_WRITABLE_CUBE_IDS
+  memos_list_skills  — List skills from the badass-skills repo clone
   memos_recent       — Recent memories across configured cubes
 
 Credentials and config are read from environment variables (never passed
@@ -14,6 +17,9 @@ to the LLM):
   MEMOS_USER_ID              default: "ceo"
   MEMOS_READABLE_CUBE_IDS    comma-separated; cubes the CEO can read across
   MEMOS_WRITABLE_CUBE_IDS    comma-separated; default "ceo-cube"
+  BADASS_SKILLS_DIR          local clone of the source-of-truth skills repo
+                             default: /home/openclaw/Coding/badass-skills
+                             (https://github.com/sergiocoding96/badass-skills)
 
 Start: python3 server.py
 Register: claude mcp add memos-hub python3 /path/to/server.py
@@ -30,6 +36,7 @@ import os
 import sys
 import urllib.request
 import urllib.error
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -44,6 +51,9 @@ READABLE_CUBES = [
 WRITABLE_CUBES = [
     c.strip() for c in os.environ.get("MEMOS_WRITABLE_CUBE_IDS", "ceo-cube").split(",") if c.strip()
 ]
+BADASS_SKILLS_DIR = Path(
+    os.environ.get("BADASS_SKILLS_DIR", "/home/openclaw/Coding/badass-skills")
+)
 
 if not API_KEY:
     print(
@@ -170,29 +180,153 @@ def memos_search(query: str, max_results: int = 10) -> dict[str, Any]:
 
 
 @mcp.tool()
-def memos_list_skills(query: str = "", max_results: int = 20) -> dict[str, Any]:
+def memos_store(
+    content: str,
+    summary: str = "",
+    chunk_id: str = "",
+    agent: str = "ceo",
+    mode: str = "fine",
+) -> dict[str, Any]:
     """
-    Skill enumeration is not yet supported on the v1 MemOS server backend.
+    Store a memory in the CEO's writable cubes.
 
-    The v2 hub had a /api/v1/hub/skills endpoint; v1 does not. The tool is
-    kept on the interface so existing prompts that reference it don't break;
-    callers will see an empty list with an explanatory note. Use memos_search
-    with skill-related queries to find skill content directly until v1 grows
-    a dedicated skills endpoint.
+    Posts to the v1 server's /product/add against MEMOS_WRITABLE_CUBE_IDS
+    (default "ceo-cube"). v1 has no first-class summary or external dedup-key
+    field, so summary and chunk_id are surfaced as custom_tags
+    (`summary:<text>`, `chunk_id:<id>`); search consumers can still filter
+    by tag.
 
     Args:
-        query: Ignored on v1.
-        max_results: Ignored on v1.
+        content:  The memory body. Required.
+        summary:  Short summary (defaults to first 120 chars of content).
+        chunk_id: Stable id for client-side dedup (defaults to a uuid4).
+        agent:    Source agent label, stored as a tag (default "ceo").
+        mode:     MemReader extraction mode — "fine" (default) or "fast".
     """
+    if not content.strip():
+        return {"status": "error", "error": "content is required"}
+    if mode not in ("fine", "fast"):
+        return {"status": "error", "error": "mode must be 'fine' or 'fast'"}
+
+    if not summary:
+        summary = content[:120]
+    if not chunk_id:
+        import uuid
+        chunk_id = f"ceo-{uuid.uuid4()}"
+
+    body = {
+        "user_id": USER_ID,
+        "writable_cube_ids": list(WRITABLE_CUBES),
+        "messages": [{"role": "assistant", "content": content}],
+        "async_mode": "sync",
+        "mode": mode,
+        "custom_tags": [
+            f"agent:{agent}",
+            f"chunk_id:{chunk_id}",
+            f"summary:{summary}",
+        ],
+    }
+    raw = _server_request("POST", "/product/add", body)
+    return {
+        "status": "stored",
+        "chunk_id": chunk_id,
+        "cubes": list(WRITABLE_CUBES),
+        "mode": mode,
+        "raw": raw,
+    }
+
+
+def _parse_skill_frontmatter(path: Path) -> dict[str, str]:
+    """Read just the leading YAML frontmatter of a SKILL.md file.
+
+    Only ``name:`` and ``description:`` are extracted, so we avoid pulling
+    pyyaml as a dep. Frontmatter delimited by ``---`` lines per CommonMark.
+    """
+    out: dict[str, str] = {}
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            first = f.readline().strip()
+            if first != "---":
+                return out
+            buf: list[str] = []
+            for line in f:
+                if line.strip() == "---":
+                    break
+                buf.append(line)
+    except OSError:
+        return out
+
+    for line in buf:
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip().lower()
+        value = value.strip()
+        if value.startswith(("'", '"')) and value.endswith(("'", '"')) and len(value) >= 2:
+            value = value[1:-1]
+        if key in {"name", "description"}:
+            out[key] = value
+    return out
+
+
+@mcp.tool()
+def memos_list_skills(query: str = "", max_results: int = 40) -> dict[str, Any]:
+    """
+    List skills available to the agents from the badass-skills repo.
+
+    The source of truth is https://github.com/sergiocoding96/badass-skills,
+    cloned locally at BADASS_SKILLS_DIR (default
+    /home/openclaw/Coding/badass-skills). This tool walks that clone and
+    reads the YAML frontmatter (``name``, ``description``) from each
+    ``<skill>/SKILL.md`` file. v1 MemOS itself has no skills endpoint —
+    skills live in source control, not the memory store.
+
+    To refresh the list, pull the repo:
+        git -C "$BADASS_SKILLS_DIR" pull --ff-only origin main
+
+    Args:
+        query:       Optional substring filter (case-insensitive) over name + description.
+        max_results: Maximum skills to return (1-200, default 40).
+    """
+    max_results = min(max(1, int(max_results)), 200)
+
+    if not BADASS_SKILLS_DIR.exists():
+        return {
+            "query": query or "(all)",
+            "totalSkills": 0,
+            "skills": [],
+            "warning": (
+                f"BADASS_SKILLS_DIR not found: {BADASS_SKILLS_DIR}. "
+                "Clone https://github.com/sergiocoding96/badass-skills to that "
+                "path or set BADASS_SKILLS_DIR to the existing clone."
+            ),
+        }
+
+    skills: list[dict[str, Any]] = []
+    needle = query.lower().strip()
+    for skill_md in sorted(BADASS_SKILLS_DIR.rglob("SKILL.md")):
+        if any(part.startswith(".") for part in skill_md.relative_to(BADASS_SKILLS_DIR).parts):
+            continue
+        meta = _parse_skill_frontmatter(skill_md)
+        name = meta.get("name") or skill_md.parent.name
+        desc = meta.get("description") or ""
+        if needle and needle not in name.lower() and needle not in desc.lower():
+            continue
+        skills.append({
+            "name": name,
+            "description": desc[:300],
+            "path": str(skill_md.relative_to(BADASS_SKILLS_DIR).parent),
+            "source": "badass-skills",
+        })
+        if len(skills) >= max_results:
+            break
+
     return {
         "query": query or "(all)",
-        "totalSkills": 0,
-        "skills": [],
-        "note": (
-            "v1 server has no skills enumeration endpoint. Use memos_search "
-            "with relevant terms to find skill content. This tool is reserved "
-            "for a future v1.x release."
-        ),
+        "totalSkills": len(skills),
+        "skills": skills,
+        "repo": "https://github.com/sergiocoding96/badass-skills",
+        "localClone": str(BADASS_SKILLS_DIR),
     }
 
 

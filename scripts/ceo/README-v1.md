@@ -10,7 +10,7 @@ The relevant decision context is in [`memos-setup/learnings/2026-04-27-v2-deprec
 
 | Interface | Audience | Primary use |
 |---|---|---|
-| **MCP server** at `memos-hub-mcp/` | The CEO Claude Code session on Paperclip | Native LLM tool calls — `memos_search`, `memos_recent`, `memos_list_skills` |
+| **MCP server** at `memos-hub-mcp/` | The CEO Claude Code session on Paperclip | Native LLM tool calls — `memos_search`, `memos_store`, `memos_recent`, `memos_list_skills` |
 | **Bash scripts** (`memos-search-v1.sh`, `memos-write-v1.sh`) | Operators in a shell, cron, manual probing | Shell-level work, debugging, scripted writes |
 
 Both layers read the same env vars and call the same v1 endpoints. They're complementary, not redundant: MCP for the LLM session because Claude Code consumes MCP tools natively; Bash for everything that runs outside an LLM context.
@@ -27,8 +27,8 @@ The MCP server preserves the original v2-era server name (`memos-hub`) and tool 
 | Auth | 24h JWT, daily cron refresh | Long-lived BCrypt-hashed agent key, no refresh |
 | Cube model | Hub federates per-agent SQLite | Single MemOS server with `CompositeCubeView` for multi-cube reads |
 | Cross-agent search | `/api/v1/hub/search` | `/product/search` with multiple `readable_cube_ids` |
-| MCP server | `memos-hub-mcp/` (called the v2 hub) | `memos-hub-mcp/` (calls v1 server, same interface) |
-| Skills enumeration | `/api/v1/hub/skills` | Not yet supported on v1; tool returns empty + note |
+| MCP server | `memos-hub-mcp/` (called the v2 hub) | `memos-hub-mcp/` (calls v1 server, same interface; gains `memos_store`) |
+| Skills enumeration | `/api/v1/hub/skills` | `memos_list_skills` walks the [badass-skills](https://github.com/sergiocoding96/badass-skills) repo clone (no v1 server endpoint) |
 
 The MCP server's tool surface is identical between the two backends — same names, same parameters, same response shapes (the v1 backend projects v1 responses onto the v2-shaped `hits[]` array internally so consumers see no change).
 
@@ -65,6 +65,7 @@ The MCP server's tool surface is identical between the two backends — same nam
    MEMOS_USER_ID=ceo
    MEMOS_WRITABLE_CUBE_IDS=ceo-cube
    MEMOS_READABLE_CUBE_IDS=ceo-cube,research-cube,email-mkt-cube
+   BADASS_SKILLS_DIR=/home/openclaw/Coding/badass-skills
    ```
 
    `chmod 600 ~/.hermes/profiles/ceo/.env`.
@@ -186,13 +187,15 @@ curl -s -X POST "$MEMOS_ENDPOINT/product/add" \
 Unit and end-to-end checks live in [`tests-v1/`](tests-v1/):
 
 ```bash
-bash scripts/ceo/tests-v1/test_memos_search_v1.sh
-bash scripts/ceo/tests-v1/test_memos_write_v1.sh
-bash scripts/ceo/tests-v1/test_e2e_v1.sh   # skips if localhost:8001 not reachable
+bash    scripts/ceo/tests-v1/test_memos_search_v1.sh   # bash script unit tests
+bash    scripts/ceo/tests-v1/test_memos_write_v1.sh    # bash script unit tests
+python3 scripts/ceo/tests-v1/test_mcp_server.py        # MCP server unit tests
+bash    scripts/ceo/tests-v1/test_e2e_v1.sh            # skips if localhost:8001 not reachable
 ```
 
 The unit tests run a small in-process Python `http.server` that records the
-request shape, so they don't need a live MemOS instance.
+request shape, so they don't need a live MemOS instance. The MCP test
+self-skips when the `mcp` package isn't installed.
 
 ---
 

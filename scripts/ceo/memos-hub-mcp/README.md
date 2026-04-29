@@ -1,6 +1,6 @@
 # memos-hub MCP Server (v1 backend)
 
-Python MCP server giving the Claude Code CEO session native tool access to MemOS — search, skill listing, and recent-activity browsing — without exposing credentials to the LLM.
+Python MCP server giving the Claude Code CEO session native tool access to MemOS — search, store, skill listing, and recent-activity browsing — without exposing credentials to the LLM.
 
 > **History:** This server used to wrap the v2 hub at port 18992. v2 was deprecated 2026-04-27 (see `memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md`). The MCP interface is preserved unchanged — same server name (`memos-hub`), same tool names, same parameter signatures, same response shapes — only the backend flips from v2 hub to v1 server. Existing `claude.json` registrations keep working without re-registration.
 
@@ -9,8 +9,9 @@ Python MCP server giving the Claude Code CEO session native tool access to MemOS
 | Tool | Description |
 |------|-------------|
 | `memos_search` | Search across all configured cubes (CompositeCubeView) — FTS + vector |
-| `memos_list_skills` | Reserved — v1 has no skills endpoint yet; returns empty + note |
+| `memos_store` | Write a memory into `MEMOS_WRITABLE_CUBE_IDS` (default `ceo-cube`). `summary` and `chunk_id` are stored as `custom_tags` since v1 has no first-class fields for them. |
 | `memos_recent` | Recent memories across configured cubes |
+| `memos_list_skills` | List skills from the [badass-skills](https://github.com/sergiocoding96/badass-skills) repo clone at `BADASS_SKILLS_DIR`. Reads `<skill>/SKILL.md` YAML frontmatter; supports a substring query filter. |
 
 ## Install
 
@@ -28,7 +29,10 @@ MEMOS_API_KEY=<raw bearer token printed once during setup-memos-agents.py provis
 MEMOS_USER_ID=ceo
 MEMOS_WRITABLE_CUBE_IDS=ceo-cube
 MEMOS_READABLE_CUBE_IDS=research-cube,email-marketing-cube,ceo-cube
+BADASS_SKILLS_DIR=/home/openclaw/Coding/badass-skills
 ```
+
+`BADASS_SKILLS_DIR` is only consumed by `memos_list_skills` and defaults to `/home/openclaw/Coding/badass-skills` when unset. Keep the clone fresh with `git -C "$BADASS_SKILLS_DIR" pull --ff-only origin main`.
 
 The CEO agent must be provisioned in `agents-auth.json` with multi-cube read access via `UserManager.add_user_to_cube`. `deploy/scripts/setup-memos-agents.py` already supports this (root role + cube grants); see `scripts/ceo/README-v1.md` for the exact invocation.
 
@@ -74,7 +78,8 @@ The MCP interface is identical, but the backend behavior differs in three places
 | Aspect | v2 hub backend | v1 server backend (current) |
 |---|---|---|
 | `memos_search` source | RRF across hub-aggregated memories | CompositeCubeView across `MEMOS_READABLE_CUBE_IDS` |
-| `memos_list_skills` | Real skill listing | Returns empty + explanatory `note` field. Use `memos_search` for skill content. |
+| `memos_store` | (was bash-only) | New tool — writes to `MEMOS_WRITABLE_CUBE_IDS` via `/product/add` |
+| `memos_list_skills` | Hub-issued skill registry | Walks the `badass-skills` repo clone (the source of truth) |
 | `memos_recent` | Separate `/memories` and `/tasks` endpoints | `/product/search` with empty query; `tasks` field is always empty |
 
 The response shape (`hits[]` with `rank`, `summary`, `excerpt`, `ownerName`, `sourceAgent`, `taskTitle`, `visibility`, `remoteHitId`) is preserved by an in-server projection so any consumer coded against v2 sees the same fields.
