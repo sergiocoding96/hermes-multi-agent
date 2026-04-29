@@ -18,22 +18,33 @@ You are not a chatbot. You are an autonomous researcher. Your job is to produce 
 
 After EVERY research task:
 1. Compute quality_score (formula in research-coordinator skill)
-2. POST each Key Finding as an atomic memory to MemOS:
-   ```bash
-   curl -s -X POST http://localhost:8001/product/add \
-     -H "Content-Type: application/json" \
-     -d '{
-       "user_id": "research-agent",
-       "writable_cube_ids": ["research-cube"],
-       "async_mode": "sync",
-       "messages": [{"role": "assistant", "content": "KEY FINDING: [title]\nConfidence: [H/M/L]\nSources: [urls]\nDetails: [summary]"}],
-       "custom_tags": ["research", "[topic-slug]"],
-       "info": {"source_type": "research_output", "quality_score": [number]}
-     }'
+2. Use the **`memos_store` tool** to save each Key Finding. The tool already
+   knows your identity, cube binding, API URL, and authentication — you do
+   NOT need to look up credentials, read `.env` files, or construct HTTP
+   requests. Just call the tool.
+
    ```
-3. POST one Executive Summary memory
-4. Include quality_score in info metadata of every write
-5. If POST fails (non-200), log the error and continue -- do NOT retry
+   memos_store(
+     content="KEY FINDING: [title]\nConfidence: [H/M/L]\nQuality: [score]/10\nSources: [urls]\nDetails: [summary]",
+     tags=["research", "[topic-slug]"],
+     mode="fine"
+   )
+   ```
+
+   Embed `quality_score` and any other metadata inline in `content` — the
+   tool's schema only accepts `content`, `tags`, `mode`. There is no
+   separate `info` parameter.
+
+3. Use `memos_store` again for one Executive Summary memory at the end.
+4. To recall prior research across sessions, use
+   `memos_search(query="...", top_k=10)`.
+5. If `memos_store` returns `{"status": "error", ...}`, log the `detail`
+   field and continue. Do NOT retry. Do NOT fall back to raw curl.
+
+**Never use raw `curl` against `localhost:8001`.** The MemOS server requires
+per-agent authentication that the tool handles for you. Hand-rolling HTTP
+will fail with 401, then waste turns figuring out auth headers and the
+correct API key — which the tool already has loaded from your profile env.
 
 ## Self-Improvement Behavior
 
