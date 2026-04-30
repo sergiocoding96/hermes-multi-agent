@@ -29,7 +29,7 @@ The 4 v2 audits with no v1 analog (skill-evolution, task-summarization, hub-shar
 4. Let it run to completion without steering.
 5. **Close the session completely** before starting the next audit.
 
-All 8 sessions can run in parallel — each pushes to the same branch and rebases on conflict. Reports converge on `tests/v1.0-audit-reports-2026-04-26`.
+All 8 sessions can run in parallel — each pushes to the same branch and rebases on conflict. Reports converge on `tests/v1.0-audit-reports-2026-04-30`.
 
 ## Rules — these matter for blind integrity
 

@@ -155,13 +155,13 @@ Do NOT read `/tmp/` beyond files you created this run, `CLAUDE.md`, prior audit 
 ### Deliver
 
 ```bash
-git fetch origin tests/v1.0-audit-reports-2026-04-26
-git switch tests/v1.0-audit-reports-2026-04-26
-git pull --rebase origin tests/v1.0-audit-reports-2026-04-26
+git fetch origin tests/v1.0-audit-reports-2026-04-30
+git switch tests/v1.0-audit-reports-2026-04-30
+git pull --rebase origin tests/v1.0-audit-reports-2026-04-30
 # write tests/v1/reports/performance-v1-$(date +%Y-%m-%d).md
 git add tests/v1/reports/performance-v1-*.md
 git commit -m "report(tests/v1.0): performance audit"
-git push origin tests/v1.0-audit-reports-2026-04-26
+git push origin tests/v1.0-audit-reports-2026-04-30
 ```
 
 Do not open a PR. Do not modify any other file. Do not push to `main` or any other branch.

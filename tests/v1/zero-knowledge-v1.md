@@ -159,20 +159,20 @@ Do NOT read `/tmp/` beyond files you created this run, `CLAUDE.md`, prior audit 
 
 ### Deliver — end-to-end (do this at the end of the audit)
 
-Reports converge on the shared branch `tests/v1.0-audit-reports-2026-04-26`. Every audit session pushes to it directly.
+Reports converge on the shared branch `tests/v1.0-audit-reports-2026-04-30`. Every audit session pushes to it directly.
 
 1. From `/home/openclaw/Coding/Hermes`, switch to the shared branch:
    ```bash
-   git fetch origin tests/v1.0-audit-reports-2026-04-26
-   git switch tests/v1.0-audit-reports-2026-04-26
-   git pull --rebase origin tests/v1.0-audit-reports-2026-04-26
+   git fetch origin tests/v1.0-audit-reports-2026-04-30
+   git switch tests/v1.0-audit-reports-2026-04-30
+   git pull --rebase origin tests/v1.0-audit-reports-2026-04-30
    ```
 2. Write your report to `tests/v1/reports/zero-knowledge-v1-$(date +%Y-%m-%d).md`. Create the directory if it does not exist. The filename MUST use this audit's basename so aggregation scripts can find it.
 3. Commit and push:
    ```bash
    git add tests/v1/reports/zero-knowledge-v1-*.md
    git commit -m "report(tests/v1.0): zero-knowledge audit"
-   git push origin tests/v1.0-audit-reports-2026-04-26
+   git push origin tests/v1.0-audit-reports-2026-04-30
    ```
-   On rebase conflict: `git pull --rebase origin tests/v1.0-audit-reports-2026-04-26 && git push`. Concurrent audits writing different report files will not actually conflict; it's the rebase that needs to succeed.
+   On rebase conflict: `git pull --rebase origin tests/v1.0-audit-reports-2026-04-30 && git push`. Concurrent audits writing different report files will not actually conflict; it's the rebase that needs to succeed.
 4. Do not open a PR. Do not modify any other file. Do not push to `main` or any other branch.
