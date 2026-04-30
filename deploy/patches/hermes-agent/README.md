@@ -97,13 +97,46 @@ For each patch that fails to apply:
   leak even when `state.db` rows contain raw secrets from before PR-A
   landed (e.g. historical data on existing deployments).
 
-  **Operator note:** for existing `state.db` files with un-redacted
-  historical rows, run the one-shot scrubber at
-  `deploy/scripts/scrub-hermes-state-secrets.py` to retroactively clean
-  them. The patches handle the forward path; the scrubber handles
-  legacy data.
+- `0005-fix-state-redact-secrets-on-memory-tool-writes-reads.patch` —
+  PR-C. Closes the second persistence channel discovered during PR #26
+  deploy verification: `tools/memory_tool.py` writes
+  `memories/USER.md` and `memories/MEMORY.md`, both of which are loaded
+  verbatim into the system prompt at session start. Hooks `redact()`
+  into `add()` and `replace()` (write-side) and `_read_file()`
+  (read-side defense for pre-patch raw entries — self-heals on next
+  rewrite, mirrors PR-B's pattern).
+
+- `0006-fix-state-redact-secrets-on-session-log-JSON-writes-.patch` —
+  PR-D. Closes the third persistence channel: `sessions/session_<id>.json`
+  dumps written by `_save_session_log()` in `run_agent.py`. Not a leak
+  *into* LLM context (session_search uses SQLite) but a leak *out* via
+  bug reports / `hermes dump` / profile backups. Walks every string
+  field in the entry via `redact_dict()`.
+
+  **Operator note:** for existing `state.db`, `memories/USER.md`,
+  `memories/MEMORY.md`, and `sessions/*.json` files with un-redacted
+  historical content, run the one-shot scrubber at
+  `deploy/scripts/scrub-hermes-state-secrets.py`. It auto-discovers all
+  four file types under a profile root::
+
+      python3.12 deploy/scripts/scrub-hermes-state-secrets.py \
+          --profile ~/.hermes/profiles/research-agent \
+          --profile ~/.hermes/profiles/email-marketing
+
+  The patches handle the forward path; the scrubber handles legacy data.
 
   Closes hermes-multi-agent issue #24 (T2 from the v1 smoke test).
+
+## Known wart in the apply script
+
+`apply-hermes-agent-patches.sh` checks idempotency by `git cat-file -e
+<sha-from-patch-From-line>`. That works for patches whose `From:` SHA
+matches a local commit (e.g. `0001` references an upstream commit
+already in `origin/main`), but **not** for patches applied via `git am`
+on a different machine — `git am` rewrites the SHA on apply. Result:
+on second-run, patches `0002`–`0006` all attempt to re-apply and fail
+loudly. The fix is obvious (match by commit subject + tree-state, not
+SHA) but is out of scope for this PR; track it separately.
 
 ## Outstanding local mods not yet captured as patches
 

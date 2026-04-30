@@ -44,6 +44,10 @@ spec.loader.exec_module(scrubber)
 redact = scrubber.redact
 redact_dict = scrubber.redact_dict
 scrub_one = scrubber.scrub_one
+scrub_markdown = scrubber.scrub_markdown
+scrub_session_json = scrubber.scrub_session_json
+discover_profile_targets = scrubber.discover_profile_targets
+scrub_dispatch = scrubber.scrub_dispatch
 
 
 class TestRedactor(unittest.TestCase):
@@ -231,39 +235,227 @@ class TestScrubber(unittest.TestCase):
             self.assertGreater(counts["rows_changed"], 0)
 
 
+class TestMarkdownScrubber(unittest.TestCase):
+    """Scrub historical USER.md / MEMORY.md files (PR-C retroactive cleanup)."""
+
+    DELIMITER = "\n§\n"
+
+    def _make_md(self, tmp: Path, name: str = "USER.md") -> Path:
+        path = tmp / name
+        entries = [
+            "Favorite color is teal-green",
+            "SendGrid test key: sk-test-DEMO-T2-FIX-VERIFY — used for email integration",
+            "the bearer of the message is benign prose",
+            "Card on file: 4111111111111111",
+        ]
+        path.write_text(self.DELIMITER.join(entries), encoding="utf-8")
+        return path
+
+    def test_scrub_redacts_entries_and_preserves_structure(self):
+        with tempfile.TemporaryDirectory() as t:
+            md = self._make_md(Path(t))
+
+            counts = scrub_markdown(md, dry_run=False)
+            self.assertEqual(counts["rows_total"], 4)
+            # 2 entries change: the sk- key and the card number.
+            # Benign prose and the favorite color stay put.
+            self.assertEqual(counts["rows_changed"], 2)
+            self.assertEqual(counts["fts_rebuilt"], 0)
+
+            text = md.read_text(encoding="utf-8")
+            self.assertNotIn("sk-test-DEMO-T2-FIX-VERIFY", text)
+            self.assertNotIn("4111111111111111", text)
+            self.assertIn("[REDACTED:sk-key]", text)
+            self.assertIn("[REDACTED:card]", text)
+            # Benign content untouched
+            self.assertIn("the bearer of the message is benign prose", text)
+            self.assertIn("Favorite color is teal-green", text)
+            # Delimiter structure preserved (4 entries → 3 separators)
+            self.assertEqual(text.count(self.DELIMITER), 3)
+
+    def test_scrub_idempotent(self):
+        with tempfile.TemporaryDirectory() as t:
+            md = self._make_md(Path(t))
+            first = scrub_markdown(md, dry_run=False)
+            second = scrub_markdown(md, dry_run=False)
+            self.assertGreater(first["rows_changed"], 0)
+            self.assertEqual(second["rows_changed"], 0)
+
+    def test_dry_run_does_not_write(self):
+        with tempfile.TemporaryDirectory() as t:
+            md = self._make_md(Path(t))
+            before = md.read_text(encoding="utf-8")
+            counts = scrub_markdown(md, dry_run=True)
+            after = md.read_text(encoding="utf-8")
+            self.assertEqual(before, after)
+            self.assertGreater(counts["rows_changed"], 0)
+
+    def test_empty_file_no_op(self):
+        with tempfile.TemporaryDirectory() as t:
+            md = Path(t) / "USER.md"
+            md.write_text("", encoding="utf-8")
+            counts = scrub_markdown(md, dry_run=False)
+            self.assertEqual(counts, {"rows_total": 0, "rows_changed": 0, "fts_rebuilt": 0})
+
+
+class TestSessionJsonScrubber(unittest.TestCase):
+    """Scrub historical sessions/*.json dumps (PR-D retroactive cleanup)."""
+
+    def _make_session_json(self, tmp: Path) -> Path:
+        path = tmp / "session_20260101_120000_abcdef.json"
+        entry = {
+            "session_id": "20260101_120000_abcdef",
+            "model": "claude-opus-4-7",
+            "system_prompt": "You are an agent. Bearer abc123def456ghi789 is the test header.",
+            "tools": [{"name": "noop", "description": "AKIAIOSFODNN7EXAMPLE owner"}],
+            "message_count": 3,
+            "messages": [
+                {"role": "user", "content": "Use sk-test-DEMO123ABCDEF in the SendGrid call"},
+                {"role": "assistant", "content": "OK, will use it once."},
+                {
+                    "role": "tool",
+                    "content": "result",
+                    "tool_calls": [{"args": {"key": "Bearer xyz789abcdef1234"}}],
+                },
+            ],
+        }
+        path.write_text(json.dumps(entry, indent=2), encoding="utf-8")
+        return path
+
+    def test_scrub_redacts_messages_and_metadata(self):
+        with tempfile.TemporaryDirectory() as t:
+            j = self._make_session_json(Path(t))
+            counts = scrub_session_json(j, dry_run=False)
+            self.assertEqual(counts["rows_total"], 3)
+            # 2 messages have secrets (user + tool); assistant is clean.
+            self.assertEqual(counts["rows_changed"], 2)
+
+            after = json.loads(j.read_text(encoding="utf-8"))
+            self.assertIn("[REDACTED:bearer]", after["system_prompt"])
+            self.assertIn("[REDACTED:aws-key]", after["tools"][0]["description"])
+            self.assertNotIn("sk-test-DEMO123ABCDEF", json.dumps(after))
+            self.assertNotIn("xyz789abcdef1234", json.dumps(after))
+            # Untouched message stays untouched
+            self.assertEqual(after["messages"][1]["content"], "OK, will use it once.")
+            # Non-string structure preserved
+            self.assertEqual(after["message_count"], 3)
+
+    def test_scrub_idempotent(self):
+        with tempfile.TemporaryDirectory() as t:
+            j = self._make_session_json(Path(t))
+            first = scrub_session_json(j, dry_run=False)
+            second = scrub_session_json(j, dry_run=False)
+            self.assertGreater(first["rows_changed"], 0)
+            self.assertEqual(second["rows_changed"], 0)
+
+    def test_metadata_only_change_still_counts(self):
+        """If only system_prompt has a secret (no message changes), report 1."""
+        with tempfile.TemporaryDirectory() as t:
+            path = Path(t) / "session_x.json"
+            path.write_text(json.dumps({
+                "session_id": "x",
+                "system_prompt": "header: Bearer abc123def456ghi789",
+                "messages": [{"role": "user", "content": "hi"}],
+            }), encoding="utf-8")
+            counts = scrub_session_json(path, dry_run=False)
+            self.assertEqual(counts["rows_changed"], 1)
+            self.assertNotIn("abc123def456", path.read_text(encoding="utf-8"))
+
+    def test_malformed_json_no_op(self):
+        with tempfile.TemporaryDirectory() as t:
+            path = Path(t) / "session_corrupt.json"
+            path.write_text("{not valid json", encoding="utf-8")
+            counts = scrub_session_json(path, dry_run=False)
+            self.assertEqual(counts, {"rows_total": 0, "rows_changed": 0, "fts_rebuilt": 0})
+
+
+class TestProfileDiscovery(unittest.TestCase):
+    """Auto-discover scrub targets under a profile root."""
+
+    def test_discover_finds_all_three_kinds(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t) / "research-agent"
+            (root / "memories").mkdir(parents=True)
+            (root / "sessions").mkdir(parents=True)
+            (root / "state.db").write_text("(stub)")
+            (root / "memories" / "USER.md").write_text("foo")
+            (root / "memories" / "MEMORY.md").write_text("bar")
+            (root / "sessions" / "session_a.json").write_text("{}")
+            (root / "sessions" / "session_b.json").write_text("{}")
+            # Decoy files that should NOT be picked up:
+            (root / "sessions" / "request_dump_x.json").write_text("{}")
+            (root / "memories" / "scratch.txt").write_text("nope")
+
+            targets = discover_profile_targets(root)
+            names = [p.name for p in targets]
+            self.assertEqual(names[0], "state.db")
+            self.assertIn("USER.md", names)
+            self.assertIn("MEMORY.md", names)
+            self.assertIn("session_a.json", names)
+            self.assertIn("session_b.json", names)
+            self.assertNotIn("request_dump_x.json", names)
+            self.assertNotIn("scratch.txt", names)
+
+    def test_discover_silently_skips_missing_pieces(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t) / "fresh-profile"
+            (root / "memories").mkdir(parents=True)
+            (root / "memories" / "MEMORY.md").write_text("only this")
+            # No state.db, no sessions/ — should not error.
+            targets = discover_profile_targets(root)
+            self.assertEqual([p.name for p in targets], ["MEMORY.md"])
+
+
+class TestScrubDispatch(unittest.TestCase):
+    """scrub_dispatch routes by extension."""
+
+    def test_unknown_extension_raises(self):
+        with self.assertRaises(ValueError):
+            scrub_dispatch(Path("/tmp/whatever.xyz"), dry_run=True)
+
+
 # ─── Live integration smoke test (operator-side, NOT auto-run) ───
 #
-# After the patches at deploy/patches/hermes-agent/0002-0004 are applied to
-# a hermes-agent install, run this manually against the running tower:
+# After the patches at deploy/patches/hermes-agent/0002-0006 are applied to a
+# hermes-agent install, run this manually against the running tower. Steps 1–4
+# verify state.db (PR-A/PR-B), steps 5–7 verify memories/USER.md (PR-C) and
+# sessions/*.json (PR-D), step 8 is the cross-channel scrubber sweep.
 #
-#   1. Pre-state — confirm no recent secrets in the test profile:
-#        sqlite3 ~/.hermes/profiles/research-agent/state.db \
-#          "SELECT COUNT(*) FROM messages WHERE content LIKE '%T2-FIX-VERIFY%'"
-#
-#   2. Submit a fresh chat with a known secret:
+#   1. Submit a fresh chat with a known secret:
 #        hermes -p research-agent chat -q \
 #          "Remember: SendGrid key is sk-test-DEMO-T2-FIX-VERIFY"
 #
-#   3. Confirm the row landed redacted (PR-A working):
+#   2. state.db landed redacted (PR-A):
 #        sqlite3 ~/.hermes/profiles/research-agent/state.db \
-#          "SELECT content FROM messages WHERE created_at > datetime('now', '-5 minutes')"
+#          "SELECT content FROM messages WHERE timestamp > strftime('%s','now','-5 minutes')"
 #      Expect [REDACTED:sk-key]; NOT the raw value.
 #
-#   4. Confirm cross-turn leak fixed (PR-B working). New session:
+#   3. memories/USER.md landed redacted (PR-C write path):
+#        grep -E "DEMO-T2-FIX-VERIFY|REDACTED" \
+#          ~/.hermes/profiles/research-agent/memories/USER.md
+#      Expect: [REDACTED:sk-key]. The raw value must NOT appear.
+#
+#   4. sessions/*.json landed redacted (PR-D write path):
+#        grep -lE "DEMO-T2-FIX-VERIFY|REDACTED" \
+#          ~/.hermes/profiles/research-agent/sessions/session_*.json
+#      Expect only redacted matches in the latest dumps.
+#
+#   5. Cross-turn leak fixed end-to-end (PR-B + PR-C read paths). New session:
 #        hermes -p research-agent chat -q \
 #          "What did I tell you earlier about SendGrid?"
 #      Agent's reply should reference [REDACTED:sk-key], not the raw value.
-#
-#   5. (Pre-existing rows fix) Run the scrubber against existing state.dbs:
-#        python3.12 deploy/scripts/scrub-hermes-state-secrets.py \
-#          ~/.hermes/profiles/research-agent/state.db \
-#          ~/.hermes/profiles/email-marketing/state.db
-#      Confirm rows_changed > 0 on profiles with historical data.
 #
 #   6. FTS index check:
 #        sqlite3 ~/.hermes/profiles/research-agent/state.db \
 #          "SELECT * FROM messages_fts_trigram WHERE messages_fts_trigram MATCH 'DEMO-T2-FIX-VERIFY'"
 #      Expect: zero rows.
+#
+#   7. (Pre-existing data) Scrub historical files via profile auto-discovery:
+#        python3.12 deploy/scripts/scrub-hermes-state-secrets.py \
+#          --profile ~/.hermes/profiles/research-agent \
+#          --profile ~/.hermes/profiles/email-marketing
+#      Walks state.db + memories/*.md + sessions/*.json. Run twice — second
+#      run must report rows_changed=0 everywhere (idempotent).
 #
 # ─────────────────────────────────────────────────────────────────────
 
