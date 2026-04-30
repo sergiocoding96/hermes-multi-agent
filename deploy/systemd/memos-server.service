@@ -1,0 +1,34 @@
+[Unit]
+Description=MemOS v1 server (Qdrant + Neo4j + SQLite, agent memory backend)
+Documentation=file:///home/openclaw/Coding/Hermes/memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md
+After=network.target docker.service
+
+# RES/9 — start-limit guard. Five failures within five minutes stops the
+# auto-restart loop and surfaces to the operator via systemctl status.
+# Prevents an unrecoverable bug from becoming infinite restart spam.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/home/openclaw/Coding/MemOS
+EnvironmentFile=/home/openclaw/Coding/MemOS/.env
+# Operator: confirm the right Python invocation for your install.
+# Default below assumes `python -m memos.api.server` is the documented entry
+# point. If your install uses a different entry, update both this line and
+# the smoke-test instructions in the PR body.
+ExecStart=/usr/bin/python3.12 -m memos.api.server_api
+
+# RES/9 — auto-restart on crash / unhandled exception / OOM.
+# Restart=on-failure means: do NOT restart on clean exits (Type=simple SIGTERM
+# from systemctl stop is clean), DO restart on non-zero exit / killed signals.
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+
+# Logs go to a rotated file alongside the existing memos-hub log convention.
+StandardOutput=append:/home/openclaw/.memos/logs/memos-server-systemd.log
+StandardError=append:/home/openclaw/.memos/logs/memos-server-systemd.log
+
+[Install]
+WantedBy=default.target
