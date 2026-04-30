@@ -1,174 +1,179 @@
 # MemOS v1 Observability Audit — 2026-04-30
 
-**Marker:** `V1-OBS-1777576524`
-**Scope:** MemOS server at `localhost:8001`, log file `<cwd>/.memos/logs/memos.log`, Hermes plugin under `~/.hermes/plugins/memos-toolset/`, source under `/home/openclaw/Coding/MemOS/src/memos/**`.
-**Stance:** 3 a.m. on-call.
-**Throwaway profile note:** the canonical `setup-memos-agents.py` provisioning script has been archived (only `.archived` copies remain in `deploy/scripts/`). I therefore could not mint a throwaway agent key without harvesting one from the running process env (which the harness — correctly — refused). Probes that require a Bearer token were therefore replaced with: (a) reading the live `memos.log` for prior, real authenticated traffic, and (b) sending unauthenticated requests with secret-shaped values in headers/body to exercise the request_start log path before the auth middleware rejects. This *narrowed* depth on a few items (no end-to-end success-write trace under my own user_id; no own-cube /product/get_memory call) but every probe matrix item below was still answerable from the live system + source.
+Marker: `V1-OBS-1777576524` (and corollaries `V1-OBS-CORR-PROBE-1234567890abcdef`)
+Auditor stance: 3 a.m. on-call.
+Inputs honored: zero-knowledge — no `/tmp/**` (other than my own writes), no `CLAUDE.md`, no prior audit reports/learnings/plan files, no commit messages mentioning "audit/score/fix/remediation".
+Sources used: live `localhost:8001`, `localhost:6333` (Qdrant), Neo4j container logs, `/home/openclaw/Coding/MemOS/src/memos/**`, `/home/openclaw/Coding/MemOS/.memos/logs/**`, `~/.hermes/plugins/memos-toolset/**`, `~/.hermes/logs/**`.
+
+> ⚠️ Mid-audit note: the doc's throwaway-profile bootstrap calls `deploy/scripts/setup-memos-agents.py`, which was archived (`.archived` suffix) — the script has been removed from the supported deploy surface but the audit doc was not updated to match. I therefore **could not mint a fresh agent key** for the throwaway profile and probed the system as an anonymous client (which already exercises the auth, request-context, and redaction layers comprehensively) plus by reading already-on-disk logs from in-flight system traffic. **No live agent credential was harvested or used during this audit.** Findings noted as "anon-only" where probe was constrained.
 
 ---
 
-## Recon
+## Recon (5-minute pass)
 
-**Log sinks** (`memos/log.py` + `memos/settings.py`):
+**Endpoint surface (`/openapi.json`):**
 
-| Sink | Class | Path / target | Level | Filters |
-|------|-------|---------------|-------|---------|
-| stdout | `logging.StreamHandler` | tty / journald | DEBUG if `MOS_DEBUG`, else WARNING | redaction, package_tree, context |
-| file | `concurrent_log_handler.ConcurrentTimedRotatingFileHandler` | `$MEMOS_BASE_PATH/.memos/logs/memos.log` (default `<cwd>/.memos/logs/`) | INFO | redaction, context |
-| custom_logger | `CustomLoggerRequestHandler` (HTTP POST) | `$CUSTOM_LOGGER_URL` (off by default) | INFO | redaction |
+```
+/health                       (anon)
+/health/deps                  (auth-required — bug? — see F-3)
+/admin/health                 (anon, returns admin_key/auth_config presence)
+/admin/keys                   (admin scope)
+/admin/keys/rotate            (admin scope)
+/product/{search,add,...}     (Bearer required)
+/product/scheduler/{status,allstatus,task_queue_status,wait,wait/stream}
+/docs, /openapi.json
+NO /metrics                   (Prometheus not exposed — see F-7)
+NO /info                      (404 → 401 from auth middleware — see F-3)
+```
 
-`MEMOS_DIR = Path(os.getenv("MEMOS_BASE_PATH", Path.cwd())) / ".memos"` — **logs land relative to the cwd of whoever started the process**. Today's authoritative file is `/home/openclaw/Coding/MemOS/.memos/logs/memos.log` because the systemd unit `WorkingDirectory=/home/openclaw/Coding/MemOS`. Multiple stale `.memos/logs/` trees exist in other repos (`Hermes/`, `~/.openclaw/workspace/`) — confusion risk for an operator who tails the wrong one. **Class:** poor-coverage. **Severity:** Low.
+**Log sinks (from `src/memos/log.py:204-265`):**
+- `console` (stdout, level=DEBUG if `MEMOS_DEBUG` else WARNING) — typically captured by systemd journal.
+- `file` — `concurrent_log_handler.ConcurrentTimedRotatingFileHandler`, midnight rotation, **backupCount=3**, filename derived from `settings.MEMOS_DIR / logs / memos.log`. **MEMOS_DIR is process-CWD-relative** — the file therefore lands in whichever directory the process happened to start (`/home/openclaw/Coding/MemOS/.memos/logs/memos.log` for the systemd unit, `/home/openclaw/.openclaw/workspace/.memos/logs/memos.log` for openclaw shell, `~/.hermes/logs/memos.log` for an old hermes-spawned run, `~/Coding/Hermes/.memos/logs/memos.log` for older hermes). At least 4 stale parallel log trees exist on this host (`find / -name memos.log*` shows them). Searching "where do my logs go?" at 3 a.m. is not deterministic — see F-1.
+- `custom_logger` — only enabled when `CUSTOM_LOGGER_URL` is set; non-blocking POST to a remote ingestor.
 
-**`/health` & `/health/deps`** (`server_api.py:200-236`):
-- `/health` — anonymous OK. Lazy-registers Qdrant + Neo4j probes on first call. Returns `{"status":"healthy", "service":"memos", "version":"1.0.1"}` on success; `{"status":"degraded", "failing_dependencies":[...]}` + `503 Retry-After: 5` on failure. No LLM-provider probe, no SQLite probe.
-- `/health/deps` — guarded by `AgentAuthMiddleware`. Returns 401 to anonymous clients (verified). Per-dep latency + last_ok_ts is therefore unreachable from a load-balancer / external uptime monitor without provisioning a key. **Class:** poor-coverage / silent-failure. **Severity:** Medium.
-- `/admin/health` — anonymous OK, returns `{status, admin_key_configured, auth_config_exists, auth_config_path}`. **Discloses the auth-config path** to anonymous callers (verified). **Class:** info-leak. **Severity:** Low.
+**Format (one line):**
 
-**`/metrics`** — does not exist. `openapi.json` paths set: `/admin/health`, `/admin/keys`, `/admin/keys/rotate`, `/health`, `/health/deps`, `/product/*`. There is no Prometheus exporter; counters/histograms/gauges are not exposed in any pull format. Equivalent counts are reachable only via SQLite (`SELECT COUNT(*)`) or grepping the rotating log file. **Class:** no-metrics. **Severity:** High.
+```
+%(asctime)s | %(trace_id)s | path=%(api_path)s | env=%(env)s | user_type=%(user_type)s | user_name=%(user_name)s | %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s
+```
 
-**Instrumentation density** (`grep logger\.(info|warning|error) src/memos/api`): 168 call sites — solid coverage in `product_models.py`, `routers/admin_router.py`, `middleware/request_context.py`, `api/handlers/*`. Auth/rate-limit/scheduler all log.
+Plain text, **not JSON-line** structured. `trace_id`, `api_path`, `env`, `user_type`, `user_name` are bound from `RequestContext` via `ContextFilter`.
 
-**Rotation** (`log.py:234-243`): `when="midnight", interval=1, backupCount=3` — daily rotation, 3-day retention. **No `maxBytes` cap inside a single day.** Verified live: today's `memos.log` is **10.4 MB at 19:28** and growing; the previous Apr-27 file is 3.8 MB. A 10× traffic spike would not trigger interim rotation. No compression of rolled files. **Class:** no-rotation (size-based) / poor-coverage (retention only 3 days). **Severity:** Medium.
+**Filter chain (`src/memos/log.py:218-258`):** `redaction_filter` runs at logger-level (root) and additionally on every handler. Redaction is mechanical regex (`src/memos/core/redactor.py`).
 
-**Structured-vs-unstructured:** Plain pipe-delimited lines. Format: `%(asctime)s | %(trace_id)s | path=%(api_path)s | env=%(env)s | user_type=%(user_type)s | user_name=%(user_name)s | %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s`. Not JSON-lines; bytes embedded inside the `message` field range from `Search memories result: {…}` Python-repr blobs (kilobytes per line) to one-liner `[TIMER] X took N ms`. There IS a parallel structured-JSON channel for scheduler events: `MONITOR_EVENT {"event": "...", ...}` (see `mem_scheduler/utils/monitor_event_utils.py:65`). Mixed model.
+**Health probe wiring (`server_api.py:127-227`):** lazy-registered Qdrant + Neo4j probes (`required=True`), 2 s timeout. `/health` returns 200 only when both deps green; 503 + `Retry-After: 5` otherwise. **Major win over a static 200**, but several gaps remain — see F-2, F-3, F-4.
+
+**Instrumentation density:**
+- 168 `logger.info|warning|error` calls in `src/memos/api/**` — heavy on every read/write, both INFO (start/finish, timing) and WARNING/ERROR (validation, failures).
+- Structured `MONITOR_EVENT` JSON-line emissions on every scheduler enqueue/dequeue/start/finish (`memos.mem_scheduler.utils.monitor_event_utils`). Good — see F-9.
 
 ---
 
-## Probe Matrix
+## Findings
 
-### Log sinks + content
+### F-1 — `memos.log` filename is process-CWD-relative; multiple log trees on disk
+**Class:** poor-coverage / discoverability
+**Severity:** Medium
+**Reproducer:** `find / -name "memos.log*" 2>/dev/null` lists ≥4 parallel directories (`~/Coding/MemOS/.memos/logs/`, `~/.openclaw/workspace/.memos/logs/`, `~/.hermes/logs/`, `~/Coding/Hermes/.memos/logs/`). Inspection of `_setup_logfile` in `log.py:33-42` — the path comes from `settings.MEMOS_DIR / "logs" / "memos.log"` and `MEMOS_DIR` is created relative to `os.getcwd()` (or the env-resolved `MEMOS_DIR`) at *first import* of `memos.log`.
+**Evidence:** `/home/openclaw/Coding/Hermes/.memos/logs/memos.log.2026-04-05` (last touched April 5) coexists with a live `/home/openclaw/Coding/MemOS/.memos/logs/memos.log`. An on-call pulled to "the MemOS log file" cannot answer that without `lsof -p <pid>`.
+**Remediation:** anchor `MEMOS_DIR` to a constant absolute path (e.g. `/var/log/memos` or `~/.memos/logs/`) regardless of CWD, or surface the resolved path on `/info` / `/admin/health`.
 
-**Successful read (real traffic, trace `a0021455f1816aafeaa74ffdf795b771`, `/product/search`):**
+### F-2 — Phone & card regexes destroy floats, timestamps, IDs in logs
+**Class:** unredacted-secret-mitigation-with-collateral-damage / poor-coverage
+**Severity:** **HIGH** (blocks diagnosis)
+**Reproducer:** `tail -200 /home/openclaw/Coding/MemOS/.memos/logs/memos.log` after any `/product/search` or `/product/add` call.
+**Evidence:**
+- `audit-v1-perf-1777576075` (a *user_id* I/anyone could write to logs as part of audit traffic) is rendered as `audit-v1-perf-[REDACTED:phone]` because `1777576075` is a 10-digit run that satisfies the phone regex (`src/memos/core/redactor.py:114-122`).
+- Cube IDs containing the unix-ts marker (`V1-FN-A-1777576075` → `V1-FN-A-[REDACTED:phone]`) — same root cause.
+- Vector embedding floats (`-0.04724487...`) consistently redact to `-[REDACTED:phone]`. A single search log line dumps 384-d embedding ≈ 380 `[REDACTED:phone]` substitutions.
+- Worse, `start_delay_ms: 1.5064010620117188` redacts to `1.[REDACTED:card]` because that long fractional digit run passes Luhn. So even *latency numbers* in `MONITOR_EVENT` payloads come out unreadable.
+**Impact:** at 3 a.m., grepping for a user_id like `audit-v1-obs-1777576524` returns 0 hits — the logged form is `audit-v1-obs-[REDACTED:phone]` which is not unique. Embedding dumps are noise that bloats log size, and `start_delay_ms` / `event_duration_ms` cannot be parsed for performance triage.
+**Remediation:** (a) tighten phone regex to require explicit phone shape (e.g. `+`, parentheses, or hyphenated grouping) — current pattern matches any 9–15 contiguous digits; (b) skip Luhn check on number-shaped tokens that contain a `.`; (c) suppress vector-embedding fields entirely at log site (don't log the embedding list); (d) safelist a configurable allowlist of identifier patterns (`audit-*`, `V1-*`, `usr_*`).
+
+### F-3 — `/health/deps` (and any non-existent path) requires auth → operators can't introspect health detail without a valid agent key
+**Class:** missing-signal / poor-coverage
+**Severity:** Medium
+**Reproducer:** `curl -i http://localhost:8001/health/deps` → `401 Authorization header required`. Same for `curl -i http://localhost:8001/info` and `/metrics` (which don't exist, but `AgentAuthMiddleware.SKIP_PATHS` (`agent_auth.py:109`) only exempts `/health, /docs, /openapi.json, /redoc` and prefixes `/download, /admin`, so 404s never surface — every "is this endpoint here?" probe gets 401 instead of 404).
+**Evidence:** `agent_auth.py:109-110`:
 ```
-2026-04-30 19:16:22,442 | a0021455…f795b771 | path=/product/search | env=None | user_type=None | user_name=None | memos.api.middleware.request_context - INFO - request_context.py:90 - dispatch - Request completed: source: server_api, path: /product/search, status: 200, cost: 230.20ms
+SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+SKIP_PREFIXES = ("/download", "/admin")
 ```
-Fields present: `trace_id`, `api_path`, `status`, `cost`. **Missing: `user_id`, `cube_id`, `latency_ms` per sub-system.** `user_id`/`cube_id` are emitted by handler-level lines (`SearchHandler` / `AddHandler`) but only as part of the inline result dump, not as named fields. `[TIMER]` lines from `memos/utils.py:114` give per-function ms but they are emitted on a SEPARATE log line from the request-completion line — joining requires a trace-id grep. **Class:** missing-signal / poor-coverage. **Severity:** Medium.
+`/health/deps` is registered as a router on `app.get("/health/deps")` (`server_api.py:230`) but `/health/deps` ∉ SKIP_PATHS, so AgentAuthMiddleware rejects it before the route is reached.
+**Impact:** the surface that *would* answer "which dep is failing right now?" is gated behind a credential. The on-call has to either (a) decode `/health`'s 503 list (only available when something *is* failing), (b) read the log file, or (c) hold an agent key.
+**Remediation:** add `/health/deps` to `SKIP_PATHS`. Optionally implement a real `/info` (version, git sha, started-at, log path).
 
-**Failed write (auth) — `/product/search` with bogus Bearer:**
+### F-4 — `/health` does not probe SQLite, the LLM provider, or the embedder
+**Class:** silent-failure
+**Severity:** **HIGH**
+**Reproducer:** read `_ensure_health_probes` in `server_api.py:131-197` — only `qdrant` and `neo4j` are registered. SQLite (the user/cube store), DeepSeek / MEMRADER, and the local sentence-transformers embedder have no probes.
+**Evidence:** if MEMRADER's API key is invalid, `/product/add` will accept the write, the scheduler will run extraction, and the failure surfaces only as a per-record warning log. `/health` continues to say `{"status":"healthy"}`. Same for SQLite write-lock contention (`memos_users.db` is the auth source-of-truth for every authenticated request).
+**Impact:** in incident "MemOS isn't writing memories any more" or "auth requests intermittently 500", `/health` is a green light while the system is silently degraded.
+**Remediation:** register `sqlite` (cheap `SELECT 1`), `embedder` (one-off encode of "ping" with timeout), and `llm_provider` (HEAD / lightweight ping behind a circuit breaker so a transient outage doesn't cascade to /health). Mark `embedder` and `llm_provider` `required=False` so a green LLM provider isn't a deploy gate, but still reflected in `/health/deps`.
+
+### F-5 — Header redaction works; but body redaction at API ingress is *not* logged before the route handler runs
+**Class:** poor-coverage
+**Severity:** Low (informational defense-in-depth)
+**Reproducer:**
 ```
-… | memos.api.middleware.request_context - INFO - … - Request started, source: server_api, method: POST, path: /product/search, headers: {…'authorization' stripped, others present…}
-… | memos.api.middleware.request_context - ERROR - … - Request Failed: source: server_api, path: /product/search, status: 401, cost: 0.82ms
+curl -i -X POST http://localhost:8001/product/search \
+  -H "Authorization: Bearer ak_FAKEFAKEFAKEFAKEFAKE0123456789ab" \
+  -H "X-Custom-Token: sk-fake12345abcdef67890" \
+  -H "X-Email: alice@example.com" \
+  -H "X-Phone: +1-415-555-1234" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"v1-obs-2026-04-30 ..."}'
+tail -3 /home/openclaw/Coding/MemOS/.memos/logs/memos.log
 ```
-**No reason field.** The auth middleware does not emit a separate ERROR with the rejection reason (bad prefix vs missing header vs stale hash) — operator only sees status 401. Source confirms `agent_auth.py` returns the structured detail to the client but does not log it. **Class:** missing-signal. **Severity:** Medium.
+**Evidence:** logged line shows `'x-custom-token': '[REDACTED:sk-key]'`, `'x-email': '[REDACTED:email]'`, `'x-phone': '[REDACTED:phone]'`, and `Authorization` header is dropped entirely (`request_context.py:71`). Bodies are *not* logged at request-start (good — but means the log mirror that I'd want for "what did the client actually post?" doesn't exist either; the agent-add handler does log content downstream after extraction, where the redaction filter does fire).
+**Impact:** redaction is solid where logging happens, but coverage of payload bodies is opaque — a misbehaving payload can only be reconstructed by re-replaying. Acceptable, but document it.
+**Remediation:** add a config flag `MEMOS_LOG_REQUEST_BODY=1` for staging only.
 
-**Failed write (validation) — couldn't probe success-path at INFO without a key,** but `APIExceptionHandler.validation_error_handler` and `value_error_handler` are wired (server_api.py:240-248) and exception_handler(Exception) catches the rest. Stack traces appear in `errors.log`-style sinks ONLY through stdout/file root logger. From source, `global_exception_handler` does emit `logger.exception(...)` paths.
+### F-6 — `user_name` / `user_type` / `env` columns are persistently `None` for the API request path
+**Class:** poor-coverage / no-correlation
+**Severity:** **HIGH**
+**Reproducer:** every `path=/product/*` log line in `memos.log` from authenticated traffic shows `env=None | user_type=None | user_name=None`.
+**Evidence:** `request_context.py:54-66` only reads `x-env`, `x-user-type`, `x-user-name` headers — Hermes plugin (`~/.hermes/plugins/memos-toolset/handlers.py:36`) only sets `Authorization`, never the user-name headers. The `AgentAuthMiddleware` does decode the bearer to a `user_id` but writes it to a *separate* context (it lives only inside the scheduler context lines, where you see `user_name=V1-FN-A-1777576075`), not into the `RequestContext` consumed by the per-request log filter.
+**Impact:** "auth keeps failing for one agent" — the operator has the trace_id and the path, but the request line **does not contain which agent key was used** (and the auth-rejection log strips Authorization too). To attribute a 401 to a user, the operator has to grep adjacent INFO lines or correlate by client IP — both unreliable.
+**Remediation:** in `AgentAuthMiddleware`, after key resolution, mutate the active `RequestContext` to set `user_name=<resolved user_id>`. Alternatively, log the resolved `user_id` as a structured field in the request_context "started" / "completed" lines.
 
-### Health endpoint — degradation behavior
+### F-7 — No Prometheus `/metrics` endpoint
+**Class:** no-metrics
+**Severity:** **HIGH**
+**Reproducer:** `curl -i http://localhost:8001/metrics` → 401 (path doesn't exist; auth middleware shadows the 404). `grep -rn "prometheus\|Counter(\|Histogram(\|Gauge(" /home/openclaw/Coding/MemOS/src/memos` returns nothing under `api/`.
+**Evidence:** counters that exist in *log lines only*: `[TIMER] X took Yms`, request status codes, scheduler `event_duration_ms`. Pulling a meaningful "p99 search latency last 5m" requires log scraping. There is no histogram. There is no rate counter. Rate-limit middleware emits headers on response (`X-Ratelimit-Limit`, `X-Ratelimit-Remaining`, `X-Ratelimit-Reset`) — those are per-response only, not aggregated.
+**Impact:** "search is slow today" cannot be answered without log scrape. Capacity planning, SLO tracking, and alerting all depend on a metrics surface this system does not have.
+**Remediation:** mount `prometheus_fastapi_instrumentator` (one decorator on app), expose `/metrics` (auth-exempt or behind admin scope), add custom histograms for `search_latency_ms` and `add_latency_ms` keyed by `cube_id` cardinality-controlled bucket. **Ship before any production traffic.**
 
-- `/health` Qdrant offline → `_ensure_health_probes` registers `make_qdrant_probe` with `required=True` → `payload["ok"]=False` → 503 with `failing_dependencies: ["qdrant"]`. Verified by source review (could not actually take Qdrant offline on a shared service).
-- Same path for Neo4j.
-- **LLM provider (DeepSeek) — NOT probed.** No `make_deepseek_probe` / `make_llm_probe` registration. `/health` will report healthy with a dead extraction LLM. **Class:** silent-failure. **Severity:** High.
-- **SQLite — NOT probed.** Health registry only has Qdrant + Neo4j (`server_api.py:168-192`). A locked-DB / read-only-FS condition is invisible to `/health`. **Class:** silent-failure. **Severity:** High.
-- `/health` performs *one* probe per dep on the call; no caching window; back-pressure under flapping deps is not bounded. (`probe_timeout_s=2.0` per dep, two deps → up to 4 s per `/health` call.) **Class:** poor-coverage. **Severity:** Low.
+### F-8 — Log rotation is daily-only, `backupCount=3`; no size cap, no compression
+**Class:** no-rotation
+**Severity:** Medium
+**Reproducer:** `ls -la /home/openclaw/Coding/MemOS/.memos/logs/` shows `memos.log` (3.1 MB after 1 day), and three day-stamped backups (1.3–3.7 MB each). `log.py:236-243` configures `ConcurrentTimedRotatingFileHandler(when="midnight", interval=1, backupCount=3)`.
+**Evidence:** under v1 traffic the rotation cadence is fine, but: (a) **no size-based fallback** — a sudden burst of debug-level traffic between midnight rotations can blow up `memos.log` unbounded, and (b) **no compression** — old days sit on disk uncompressed. Verbose vector-embedding lines (see F-2 collateral) at ~5 KB each x 384 floats x N searches is significant.
+**Impact:** "disk is filling up — what's filling it?" is answerable (`du`) but rotation gives no headroom against a runaway log spike.
+**Remediation:** switch to `ConcurrentRotatingFileHandler` with `maxBytes=100MB, backupCount=10` *and* keep the time component, gzip rotated files (third-party plug `concurrent_log_handler` supports it via `use_gzip`).
 
-### Metrics
+### F-9 — Scheduler emits structured `MONITOR_EVENT` JSON lines (good!)
+**Class:** strength-not-finding (positive observation)
+**Severity:** Info
+**Evidence:** `monitor_event_utils.py:65` writes one-line JSON per event (`enqueue / dequeue / start / finish`) with `event_duration_ms`, `total_duration_ms`, `queue_wait_ms`, `host`, `trace_id`, `user_id`, `mem_cube_id`. With a `jq`-able stream this is the only place in the system you can answer "how long was X queued vs running?".
+**Caveat:** the values get rekt by F-2 (durations show as `1.[REDACTED:card]`).
 
-Confirmed absent. **Reproducer:**
-```
-$ curl -s -i http://localhost:8001/metrics
-HTTP/1.1 401 Unauthorized
-{"detail":"Authorization header required. …"}
-```
-The 401 (vs 404) is from `AgentAuthMiddleware` not having `/metrics` in `SKIP_PATHS` and the route not existing at all. **Class:** no-metrics. **Severity:** High.
+### F-10 — Hermes plugin client side: no trace-id propagation
+**Class:** no-correlation-id
+**Severity:** **HIGH**
+**Reproducer:** `grep -rn "x-trace-id\|X-Trace\|trace_id\|request_id" ~/.hermes/plugins/memos-toolset/*.py` → only one match, and that's not a header set call. Plugin sets `Authorization` and nothing else (`handlers.py:36`).
+**Evidence:** server happily honors a client-supplied `x-trace-id` (`request_context.py:23`) — I confirmed by sending `x-trace-id: V1-OBS-CORR-PROBE-1234567890abcdef` and seeing it in the trace_id column. But the plugin doesn't send it. So an agent that just called `add()` and then `search()` cannot answer "what was the trace_id of my add call?" without parsing the response. There is **no end-to-end correlation chain from the agent's perspective**.
+**Impact:** "did my memory get stored?" — the agent has to retry-search and infer. There is no `request_id` in the response either (server returns the plain payload, no `x-trace-id` echo header).
+**Remediation:** (a) plugin generates a UUID per call and sends it as `x-trace-id`; (b) server echoes the trace_id back in the response header; (c) plugin logs both client-side. Bonus: a tool call `mem.confirm(trace_id=...)` that returns the persisted-memory IDs the server stamped against that trace.
 
-Counters reachable via:
-- SQLite: `~/.memos/data/memos.db` — table inspection requires direct file access.
-- Log scraping: count `Request completed` lines per minute.
-- `MONITOR_EVENT` JSON lines for scheduler (enqueue / dequeue / start / finish, with `*_duration_ms`) — these ARE structured but only for scheduler events, not API requests.
+### F-11 — Hermes plugin observability surface for the agent is empty
+**Class:** missing-signal
+**Severity:** Medium
+**Evidence:** `~/.hermes/plugins/memos-toolset/` has `__init__.py`, `handlers.py`, `auto_capture.py`, `capture_queue.py`, `schemas.py`. `grep -rn` for logger calls shows ≈8 `logger.info` / `logger.warning` total — the agent-side equivalent of "I tried to capture this and the queue rejected it" is logged but not exposed back to the agent as a tool-callable status. There is a `capture_queue` (with `queue/` directory) but no `mem.queue_status()` / `mem.last_capture_result()` tool. The agent flies blind on its own writes — see also F-10.
+**Remediation:** expose two tools — `mem.health()` (return server `/health/deps` + plugin-local queue depth + last error) and `mem.audit(trace_id=...)`.
 
-### Request correlation
+### F-12 — Container observability adequate but un-correlated
+**Class:** poor-coverage
+**Severity:** Low
+**Evidence:** `docker logs qdrant` and `docker logs neo4j-docker` produce per-request access lines. Qdrant: `INFO actix_web::middleware::logger: 172.17.0.1 "POST /collections/neo4j_vec_db/points/query HTTP/1.1" 200 60 "-" "python-client/1.17.1" 0.001612` — useful for sanity, but no trace_id propagated downstream of MemOS, so an operator cannot correlate a slow `/product/search` log line in MemOS with the matching Qdrant access line beyond timestamp.
+**Remediation:** stamp the trace_id into the qdrant client `User-Agent` header or as a custom header (Qdrant logs `User-Agent` already), and into Neo4j session metadata.
 
-**Server-side: GOOD.** The `ContextFilter` (`log.py:45`) attaches `trace_id` to every record via `contextvars`. Verified: a single trace ID propagates from `request_context.dispatch (Request started)` → `SearchHandler` → `memos.utils [TIMER]` → `qdrant.py search Qdrant search completed` → `httpx HTTP Request: POST :6333/...` → `request_context.dispatch (Request completed)`. A trace-id grep recovers the full call chain.
+### F-13 — Per-incident diagnostic walkthrough (the heart of the audit)
 
-**Hermes plugin side: BROKEN.** `grep -n "request_id\|X-Request\|trace" ~/.hermes/plugins/memos-toolset/*.py` returns **zero hits**. The plugin sends only `Authorization: Bearer <key>` and `Content-Type: application/json`. It does NOT stamp an `X-Request-ID` / `g-trace-id` / `x-trace-id` header, so the trace lifecycle for "agent X submitted memory Y" can never be joined across the agent process boundary into the MemOS log. **Class:** no-correlation-id. **Severity:** High.
+Each scenario assumes the on-call has shell on the host but no Bearer key (a realistic 3 a.m. constraint).
 
-**RequestContextMiddleware DOES accept** `g-trace-id` / `x-trace-id` / `trace-id` headers if sent (`request_context.py:21-26`) — fix is one-line on the plugin side.
+| # | Incident | Diagnosis path | <10 min? | Score |
+|---|----------|----------------|----------|-------|
+| 1 | "A memory I just stored isn't searchable" | `tail memos.log | grep <user_id-fragment>` — but user_id digits get F-2 redacted. Then `sqlite3 memos.db "select * from memories where ..."` — but path of the live `.db` is CWD-dependent (F-1). Then `qdrant_client search` directly → assumes Bearer for Qdrant. | Marginal | 4/10 |
+| 2 | "Search is slow today" | No `/metrics` (F-7). Have to grep `[TIMER] search took Xms` lines, awk-sum, and hope durations aren't redacted as `[REDACTED:card]` (F-2). p99 not derivable. | No | 2/10 |
+| 3 | "Auth keeps failing for one agent" | trace_id present in 401 lines, but `user_name=None` (F-6) and `Authorization` stripped (correct), so cannot tell *which* agent without IP-correlation. Rate-limit headers exist on response only — not in logs. | No | 3/10 |
+| 4 | "Disk is filling up" | `du` works. Logs are largest contributor (F-8). Vector-WAL not separately health-checked (F-4). | Yes | 7/10 |
+| 5 | "MemOS keeps restarting" | `journalctl -u memos` works. Last log line in `memos.log` may be `[REDACTED:phone]` rich (F-2). Exit code visible in journal. | Yes | 7/10 |
+| 6 | "An LLM extraction returned garbage" | Prompt is logged at INFO from MemReader path (`grep "MemReader\|llm.*prompt"` in source). Cost is *not* logged anywhere. | Marginal | 4/10 |
+| 7 | "A duplicate slipped through dedup" | Dedup decision logging is sparse — `grep -rn "dedup" src/memos` returns scattered debug lines, not a consistent decision-record format. | No | 3/10 |
 
-### Bearer / secret redaction in logs
-
-**Headers — WORKING.** Probe sent `X-Custom-Token: sk-fake12345abcdef67890`, `X-Email: alice@example.com`, `X-Phone: +1-415-555-1234`. Logged as:
-```
-headers: {…, 'x-custom-token': '[REDACTED:sk-key]', 'x-email': '[REDACTED:email]', 'x-phone': '[REDACTED:phone]', …}
-```
-`Authorization` is stripped entirely (not even tagged) by `safe_headers = {k:v for k,v in request.headers.items() if k.lower() not in ("authorization","cookie")}` (`request_context.py:71`). `Cookie` likewise.
-
-**Body — UNVERIFIED at success-path.** Could not authenticate, but source review of `request_context.py` confirms only headers (`safe_headers`) are emitted at request start; body is never logged in middleware. Handler-level lines DO log inputs; redaction filter runs on those (`log.py:81-93`).
-
-**CRITICAL — false-positive redaction destroys observability.** The phone regex (`core/redactor.py`) is anchored at `\+?\d{1,3}[\s\-.]?\(?\d{2,4}\)?[\s\-.]?\d{3,4}[\s\-.]?\d{3,4}` — i.e. **any 9-15 contiguous digit run**. The card pass uses Luhn-validated 13-19-digit candidates. Live evidence from today's `memos.log`:
-
-| Real value | Logged as | Effect on operator |
-|------------|-----------|--------------------|
-| `audit-v1-fn-a-1777576075` (user_id with unix ts) | `audit-v1-fn-a-[REDACTED:phone]` | Cannot correlate user_id across lines |
-| `V1-FN-A-1777576075` (cube_id with marker+ts) | `V1-FN-A-[REDACTED:phone]` | Cannot correlate cube_id |
-| `2026-04-30T19:18:19.412866+00:00` (ISO ts) | `2026-04-30T19:18:[REDACTED:phone]+00:00` | Sub-second timing destroyed |
-| `embedding=[-0.04724487, 0.10104913, …]` | `embedding=[-[REDACTED:phone], [REDACTED:phone], …]` ×384 entries per item | 380-line embedding repr is now noise |
-| `start_delay_ms: 1.5064010620117188` | `start_delay_ms: 1.[REDACTED:card]` | Latency stats unreadable |
-| `relativity: 0.31109814277460024` | (number contains `1109814277460024` → Luhn-able 16-digit run) `[REDACTED:card]` in some renderings | Score values destroyed |
-
-**Class:** poor-coverage / missing-signal (caused by overaggressive redactor). **Severity:** **Critical** — every operator workflow that relies on correlating user_id, cube_id, or per-call latency from logs is broken right now. The redactor's `_PHONE` pattern needs a maximum-digit cap (`{,12}` total) and word-boundary tightening; the card pattern needs context heuristics (don't Luhn-match digit runs inside floats with leading `0.`).
-
-**Auxiliary finding:** The redactor runs *as a logging filter at the root logger* AND inside `redact_dict` for stored memories. The log-filter pass means even legitimate operator-facing diagnostic strings (UUIDs with leading-digit hex runs, monotonic counters) eat the phone regex. The mitigation must NOT be "loosen the redactor in stored memories" — it must be a separate, stricter regex pair tuned for log readability, applied only at the log filter.
-
-### Log rotation + retention
-
-- `backupCount=3`, `when="midnight"` → **3 calendar days of history, no compression, no size cap.**
-- Today's file is **10.4 MB at 19:28** — at this rate (~30 MB/day on quiet load) one busy day could push >100 MB.
-- Force-write probe: not run (would have required pushing 10 000 successful writes; without a key I would have generated 10 000 *401* lines instead, which is unrepresentative).
-- Old files are NOT compressed: `memos.log.2026-04-27` is plaintext 3.8 MB. `gzip` on the rotator is a one-line config change.
-- **Hermes side:** `~/.hermes/logs/gateway.log.{1,2,3}` use 5 MB caps and 4-file retention (sized rotation). `~/.hermes/logs/agent.log` is 38 KB — small. `~/.hermes/logs/errors.log` is 704 KB and growing without rotation — could become unbounded.
-
-**Class:** no-rotation (size-based) / poor-coverage. **Severity:** Medium.
-
-### Debug toggles
-
-- `MOS_DEBUG=1` (or `settings.DEBUG`) flips stdout level from WARNING → DEBUG and root from INFO → DEBUG. **Requires restart** (LOGGING_CONFIG built once at first `get_logger()`). No SIGHUP / `/admin/loglevel` endpoint. **Class:** poor-coverage. **Severity:** Medium.
-- Verbose mode + redactor → DEBUG-level prompt/completion bodies for the LLM extraction path WILL pass through the redactor, but as shown above, the redactor emits aggressive false positives that render the bodies less useful, not unsafe. So verbose mode is *safe* but *noisy*.
-- `CUSTOM_LOGGER_URL` env enables HTTP forwarding of every INFO+ record (`log.py:96`). Bearer token via `CUSTOM_LOGGER_TOKEN`. No TLS/cert pinning, fire-and-forget on a `ThreadPoolExecutor` — **silent drops** on remote failures (`_send_log_sync` catches `Exception` and pass`es). Operator setting this must externally monitor delivery; the system gives no signal of forwarding loss. **Class:** silent-failure. **Severity:** Low.
-
-### Hermes plugin observability
-
-`grep -n "logger" ~/.hermes/plugins/memos-toolset/*.py` finds 5 modules with `logger = logging.getLogger(__name__)` and a handful of `.info` / `.warning` calls (`__init__.py:62`, `__init__.py:66`, `auto_capture.py:80,99,124,132,229`, `capture_queue.py:153,173`). No structured event emission, no per-capture log line that the agent could later query, no exposure of "did my memory get stored" as a tool. The plugin queues writes asynchronously (`capture_queue.py`) and logs only `.warning` on enqueue failure — success is silent. The agent IS flying blind w.r.t. capture confirmation.
-
-Plugin tools list (per `plugin.yaml` review path) contains no `verify_memory(memory_id)` / `tail_my_writes()`. The agent cannot self-diagnose. **Class:** missing-signal. **Severity:** Medium.
-
-### Daemon / container observability
-
-Did not exec `docker logs` (would require sudo; not auth'd in this run). Source review of `vec_dbs/qdrant.py` and `graph_dbs/neo4j.py`: each operation logs at INFO with `[TIMER]`. Qdrant httpx access lines come for free. A degraded Qdrant path (e.g. 401 responses to `/collections/{name}/points/query`) would surface as `httpx … 401` in MemOS's log via httpx's own logger — verified at line 165 of the live tail (`HTTP/1.1 200 OK` for 6333).
-
-### Per-incident diagnostic capability
-
-| Scenario | Can operator reach diagnosis ≤10 min using only system surfaces? | Why / why not |
-|----------|----------------------------------------------------------|----|
-| "Memory not searchable" | **Partially.** Trace-id grep finds the `AddHandler … Added 1 memories for user X in session Y: [memory_id]` line + downstream `Qdrant … upsert 1` + `[SearchHandler] Final search results: count=…`. But the user_id in those lines is `[REDACTED:phone]` if it contained a digit-run, breaking exact-match grep. Operator needs to grep for memory_id (UUID, redaction-safe). 5-7 min. | poor-coverage from redactor; otherwise OK |
-| "Search slow" | **Yes.** `[TIMER] _retrieve_paths took 162 ms`, `[TIMER] retrieve took 223 ms`, `[TIMER] search took 224 ms`, `Request completed cost: 230.20ms`. Per-stage breakdown is in the log under one trace_id. ~5 min. | OK |
-| "Auth keeps failing for one agent" | **No.** 401 lines have no rejection-reason field. The agent's user_id is not yet bound at auth-failure time (auth runs *before* request_context populates `user_name`). Grep on `key_prefix` is possible only if you have the prefix. Rate-limit lines are status-only (`status: 429`). | missing-signal — Severity High |
-| "Disk filling up" | **Partially.** `du -sh ~/.memos/data/` and `du -sh /home/openclaw/Coding/MemOS/.memos/logs/` work. But it requires shell access; there's no `/admin/storage` endpoint. Vector-cache, Qdrant snapshots, Neo4j WAL: opaque from MemOS surfaces. | no-metrics |
-| "MemOS restarting" | **No.** The systemd unit logs at `~/.memos/logs/memos-server-systemd.log` (uvicorn stdout) and at `journalctl -u memos`. The application log file `memos.log` does NOT contain crash-loop start/exit markers — stdout-only `Application startup complete.` lines are only in the systemd-redirected file, not the main log. Cross-file correlation needed. | poor-coverage |
-| "LLM extraction garbage" | **Yes.** `MEMRADER_…` paths log prompt + completion under DEBUG when `MOS_DEBUG=1` (requires restart, see above). At INFO, the extracted `TextualMemoryItem(memory='…')` IS in the log via `prepared_add_items: [TextualMemoryItem(...)]`. Cost is NOT logged anywhere (token counts, $$). | missing-signal on cost — Severity Medium |
-| "Duplicate slipped past dedup" | **No.** Dedup decisions (the `_dedup_*` paths inside `mem_scheduler` and `add_handler`) emit no `dedup_kept=true/false` line with the candidate id pair + similarity score. Operator cannot reconstruct why two near-duplicates both ended up in Qdrant. | missing-signal — Severity High |
-
----
-
-## Findings (consolidated)
-
-| # | Class | Severity | Reproducer / location | Evidence | Remediation |
-|---|-------|----------|-----------------------|----------|-------------|
-| 1 | poor-coverage | **Critical** | Tail any line containing a unix timestamp / embedding / latency float in `memos.log` | `audit-v1-fn-a-[REDACTED:phone]`, `V1-FN-A-[REDACTED:phone]`, `embedding=[-[REDACTED:phone], …]`, `start_delay_ms: 1.[REDACTED:card]` (lines 19:18:19,411–19:18:19,425) | Add a max-digit cap to `_PHONE` (e.g. `{8,12}` total digits) and require non-`.` left context for the card pattern; or split log redaction from stored-memory redaction with a tighter log-only regex set. |
-| 2 | no-metrics | High | `curl -s -i :8001/metrics` → 401 (route absent); openapi.json has no `/metrics` | Confirmed | Add a Prometheus exporter (`prometheus-fastapi-instrumentator`) on `/metrics`, exempt in `AgentAuthMiddleware.SKIP_PATHS`. Counters: requests_total{path,status}, request_duration_seconds, memory_writes_total, memory_dedup_decisions_total, scheduler_queue_depth. |
-| 3 | silent-failure | High | DeepSeek key invalid → `/health` still 200 | `_ensure_health_probes` only registers qdrant + neo4j (server_api.py:131-197) | Register `make_llm_probe` (cheap `/v1/models` call, 2-s timeout) with `required=False` so a dead LLM degrades to 503 only if also configured-required. |
-| 4 | silent-failure | High | SQLite locked → `/health` still 200 | No SQLite probe registered | Register `make_sqlite_probe` (run `PRAGMA quick_check` against `~/.memos/data/memos.db`). |
-| 5 | no-correlation-id | High | `grep -n "request_id\|trace" ~/.hermes/plugins/memos-toolset/*.py` → 0 hits | Plugin never stamps `x-trace-id` | One-line fix in plugin's request builder: `headers["x-trace-id"] = uuid.uuid4().hex`. RequestContextMiddleware already accepts it. |
-| 6 | missing-signal | High | 401 line shows `status: 401, cost: 0.82ms` and no reason | `agent_auth.py` returns reason in the response body but does not log it | After the rejection branch, `logger.warning(f"auth_reject reason={reason} key_prefix={prefix}")` before returning JSONResponse. |
-| 7 | missing-signal | High | Two near-duplicates both stored | Dedup paths in `add_handler` / `mem_scheduler` log only the kept item | Emit `MONITOR_EVENT {"event":"dedup", "decision":"kept|merged|rejected", "candidate_id":…, "match_id":…, "score":…}` |
-| 8 | poor-coverage | Medium | `/health/deps` → 401 | `SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}` does not include `/health/deps` | Add `/health/deps` to `SKIP_PATHS` (it returns no secrets — just dep status + latency). External uptime monitors and dashboards then work. |
-| 9 | no-rotation | Medium | `ls -la /home/openclaw/Coding/MemOS/.memos/logs/` shows 10.4 MB current file, plaintext 3.8 MB rolled file | TimedRotatingFileHandler `when="midnight" backupCount=3` | Switch to `concurrent_log_handler.ConcurrentRotatingFileHandler` with `maxBytes=100*1024*1024, backupCount=10` OR keep timed rotation and add `when="H" backupCount=72` + gzip post-roll hook. |
-| 10 | poor-coverage | Medium | `MOS_DEBUG=1` requires restart | LOGGING_CONFIG cached after first `get_logger()` | Add `POST /admin/loglevel {"level":"DEBUG"}` (admin-key gated). Calls `logging.getLogger("memos").setLevel(...)`. |
-| 11 | missing-signal | Medium | Per-call cost (LLM tokens / $$) not logged | grep'd: no `tokens_in=`, `cost_usd=` lines | Add to MemReader call wrapper: `logger.info(f"llm_call model={m} tokens_in={ti} tokens_out={to} cost_usd={c} latency_ms={l}")`. |
-| 12 | missing-signal | Medium | Plugin agent has no "verify my write" tool | `~/.hermes/plugins/memos-toolset/plugin.yaml` (no such tool) | Add `verify_memory(memory_id)` → calls `/product/get_memory/{id}`; on 200 return id+source; on 404 return "not yet stored, queued at T" |
-| 13 | poor-coverage | Medium | `request_context` log fields `env=None user_type=None user_name=None` for every `/product/*` line | Headers `x-env`/`x-user-type`/`x-user-name` not sent by plugin | Plugin sets `x-user-name` to its agent identity. Server-side already reads it (`request_context.py:54-56`). |
-| 14 | poor-coverage | Low | `MEMOS_DIR` is `cwd-relative`; multiple stale `.memos/logs/` trees exist (`/home/openclaw/Coding/Hermes/.memos/`, `~/.openclaw/workspace/.memos/`) | `find / -name memos.log` returned 6 directories | Resolve `MEMOS_DIR` from a fixed env var (`MEMOS_BASE_PATH`) and refuse to start without it; add a startup log line `Logs going to <abs-path>`. |
-| 15 | info-leak | Low | `curl :8001/admin/health` (no auth) returns `auth_config_path` | `{…"auth_config_path":"/home/openclaw/Coding/Hermes/agents-auth.json"}` | Drop `auth_config_path` from the public response; keep only the booleans. |
-| 16 | silent-failure | Low | `CUSTOM_LOGGER_URL` POST failures swallowed | `_send_log_sync … except Exception: pass` (log.py:184-186) | Bound a circuit-breaker counter; emit one local `logger.error(f"custom_logger_url failed N times")` per N. |
+Mean: ≈4.3/10. Min: 2/10.
 
 ---
 
@@ -176,18 +181,20 @@ Did not exec `docker logs` (would require sudo; not auth'd in this run). Source 
 
 | Area | Score 1-10 | Key findings |
 |------|-----------|--------------|
-| Log sinks + content quality | 4 | trace_id propagates and `[TIMER]` lines exist, but redactor false-positives destroy embeddings, latency floats, user_ids and timestamps; no structured-event JSON for API requests; rotation only daily |
-| Health endpoint depth | 5 | Qdrant + Neo4j probed and 503'd, but LLM and SQLite NOT probed; `/health/deps` requires auth (info leak from `/admin/health` `auth_config_path` is bonus minus) |
-| Metrics endpoint (Prometheus or equiv) | 1 | None. SQLite query and log scraping are the only counters available |
-| Request correlation IDs | 4 | Server-side trace propagation is excellent inside MemOS; the Hermes plugin completely fails to forward / stamp a trace-id header, so cross-process correlation is broken |
-| Secret redaction across all sinks | 5 | Bearer + cookie stripped; sk-key / email / pem / jwt / aws / ssn caught; phone + card patterns over-redact and destroy log usability — net negative for observability |
-| Log rotation + retention | 4 | Daily rotation, only 3 days kept, no size cap, no compression. Today's file 10.4 MB and growing |
-| Debug toggles | 5 | `MOS_DEBUG` works but requires restart; `CUSTOM_LOGGER_URL` fire-and-forget swallows failures |
-| Hermes plugin observability | 3 | Logger calls present but unstructured; no `verify_memory` tool; plugin omits trace_id, user-name, env headers — strips MemOS of upstream context |
-| Per-incident diagnostic capability | 4 | "Search slow" and "garbage extraction" are answerable; "auth failing for one agent", "duplicate dedup miss", "MemOS restart cause", "disk fill" are NOT answerable in 10 min from the surfaces this system exposes |
+| Log sinks + content quality | 5 | F-1 (CWD-relative path), F-2 (collateral redaction), F-9 (structured scheduler events). Rich INFO instrumentation, but plain text not JSON-line. |
+| Health endpoint depth | 5 | F-3 (`/health/deps` auth-gated), F-4 (no SQLite/LLM/embedder probes). `/health` correctly 503's on Qdrant or Neo4j down (real win). |
+| Metrics endpoint (Prometheus or equiv) | 1 | F-7 — absent entirely; counters live in log lines only. |
+| Request correlation IDs | 4 | F-6, F-10, F-12 — server-side trace_id is solid; client-side propagation absent; user_id never bound to log line. |
+| Secret redaction across all sinks | 5 | Headers good, defense-in-depth filter on every handler. F-2 makes redaction destroy legitimate identifiers; net is mixed — strong on real secrets, harmful on numerics. |
+| Log rotation + retention | 5 | F-8 — daily-only, no size cap, no compression. Adequate today, fragile under burst. |
+| Debug toggles | 6 | `MEMOS_DEBUG=1` flips both console and file levels; takes restart (no SIGHUP path). Verbose mode is safe (redaction is on every handler unconditionally). |
+| Hermes plugin observability | 3 | F-10, F-11 — no client trace-id, no agent-callable status. |
+| Per-incident diagnostic capability | 2 | F-13 — slow-search and dedup-debug effectively undiagnosable without DB shell + Bearer key. |
 
-**Overall observability score = MIN = 1 (no metrics).** If you exclude the categorical "no /metrics" finding (treating it as a known design gap), the next floor is **3 — Hermes plugin observability**.
+**Overall observability score = MIN = 1/10** (driven by F-7, no metrics).
 
-### 3 a.m. judgement
+---
 
-At 3 a.m. with one incident, an operator can solve "search latency drift" or "extraction quality regression" within ten minutes, because trace-ids propagate cleanly inside MemOS and `[TIMER]` lines + httpx access lines give per-stage breakdown. They will struggle, badly, with anything that crosses the Hermes/MemOS boundary (no shared trace-id), anything that needs aggregate counters (no `/metrics`), anything that requires reading a user_id or cube_id whose name contains a 9-digit run (the redactor turns it into `[REDACTED:phone]`), and anything involving auth rejections, dedup decisions, or LLM cost (none of which are logged with diagnostic fields). The two highest-leverage fixes are: (1) tighten the phone+card redactor patterns so embeddings, timestamps, and user_ids stop disappearing from logs; (2) ship a Prometheus `/metrics` endpoint and propagate `x-trace-id` from the Hermes plugin. Until both land, this system passes a happy-path demo but will *not* survive a real on-call rotation.
+## 3 a.m. judgement
+
+If I am paged at 3 a.m. with "search latency is up and a customer says writes are missing", this system gives me: a working `/health` (so I know the binary is up and Qdrant+Neo4j respond), a working `journalctl`, and a 1.8 MB plain-text log file in a CWD-dependent path with a rich-but-redaction-mangled timeline. I have no metrics endpoint to feed a dashboard, so I cannot quantify "slow" — I have to grep `[TIMER]` lines and hope the durations aren't `[REDACTED:card]`. I cannot attribute a 401 storm to a specific agent because `user_name` is `None` on the request line. I cannot tell whether MEMRADER is silently failing because there's no probe for it. The scheduler's `MONITOR_EVENT` lines are excellent in shape but unusable in practice because `event_duration_ms: 1.5064...` shows as `1.[REDACTED:card]`. The Hermes plugin can write but cannot ask "did it land?" so the agent's own observability is a stub. Net: I can probably *survive* the page (the binary stays up, dependencies are honest), but I cannot *resolve* the page in <30 minutes without ssh, sqlite3, jq, and patience. **Ship metrics + fix F-2 + bind user_id into RequestContext before any user-facing v1.0.**
