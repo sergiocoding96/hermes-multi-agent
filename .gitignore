@@ -15,3 +15,8 @@ provisioning-*.log
 agents-auth.json
 agents-auth.json.*
 .env
+
+# Python bytecode caches
+__pycache__/
+*.pyc
+*.pyo

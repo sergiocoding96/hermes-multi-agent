@@ -78,6 +78,33 @@ For each patch that fails to apply:
   from a transient telegram disconnect). See the patch's own commit
   message for full root cause.
 
+- `0002-feat-state-add-secret-redactor-module-for-state.db-h.patch` —
+  introduces `hermes_state_redactor.py` (regex set + Luhn-validated card
+  detection + substring fast-path). Standalone module — no behavioral
+  change yet; subsequent patches wire it in. Patterns mirror MemOS
+  PR #6's redactor.
+
+- `0003-fix-state-redact-secrets-on-write-into-messages-tabl.patch` —
+  PR-A. Hooks the redactor into `add_message` and `replace_messages` so
+  secrets in `content` and `tool_calls` get scrubbed before they're
+  INSERTed into `state.db`. The FTS index populated by after-INSERT
+  triggers also indexes only the redacted form.
+
+- `0004-fix-state-redact-secrets-on-context-load-reads-PR-B.patch` —
+  PR-B. Hooks the redactor into `get_messages_as_conversation` so loaded
+  message history is scrubbed *before* it enters the LLM's prompt context.
+  Higher-leverage than PR-A because it stops the recurring cross-turn
+  leak even when `state.db` rows contain raw secrets from before PR-A
+  landed (e.g. historical data on existing deployments).
+
+  **Operator note:** for existing `state.db` files with un-redacted
+  historical rows, run the one-shot scrubber at
+  `deploy/scripts/scrub-hermes-state-secrets.py` to retroactively clean
+  them. The patches handle the forward path; the scrubber handles
+  legacy data.
+
+  Closes hermes-multi-agent issue #24 (T2 from the v1 smoke test).
+
 ## Outstanding local mods not yet captured as patches
 
 As of the last audit (2026-04-28), the local hermes-agent install also has
