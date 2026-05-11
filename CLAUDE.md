@@ -2,23 +2,19 @@
 
 ## 🚨 Active sprint — read this first
 
-**Single-tier memory architecture: MemOS only. Holographic Tier 1 deprecated 2026-04-28. v1 (MemOS server) remains the production target.**
+**Removed the Paperclip CEO and the v2 MemOS hub on 2026-05-11. Hermes Kanban replaces the CEO. Single-tier MemOS (v1 server) stays. Workers stay.**
 
 Any new agent working in this repo should read these before acting:
 
-1. **Decision doc (current):** [`memos-setup/learnings/2026-04-28-collapse-to-single-tier-memos.md`](memos-setup/learnings/2026-04-28-collapse-to-single-tier-memos.md) — why holographic was deprecated, what's gone, what's left, rollback path
-2. **Previous direction (still relevant context):** [`memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md`](memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md) — why v2 was deprecated, what was fixed in v1
-3. **MVP-readiness brief:** [`tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf`](tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf) — pre-fix audit + remediation plan
-4. **Two-repo team explainer:** [`docs/architecture/two-repos.pdf`](docs/architecture/two-repos.pdf) — how Hermes (this repo) and MemOS (`sergiocoding96/MemOS`, your fork) fit together
-5. **Operator runbook:** [`tests/v1/STEP-BY-STEP.md`](tests/v1/STEP-BY-STEP.md) and [`tests/v1/CC-PROMPTS.md`](tests/v1/CC-PROMPTS.md) — phase-by-phase commands for fix → re-audit → ship
-6. **Sprint 1 history (still relevant):** [`memos-setup/learnings/2026-04-20-sprint-merge-log.md`](memos-setup/learnings/2026-04-20-sprint-merge-log.md) — what was shipped in the original v1 hardening sprint
-7. **Superseded — historical only:** [`memos-setup/learnings/2026-04-20-v2-migration-plan.md`](memos-setup/learnings/2026-04-20-v2-migration-plan.md) (the original v2 migration plan)
+1. **Decision doc (current):** [`memos-setup/learnings/2026-05-11-remove-hub-and-paperclip-ceo.md`](memos-setup/learnings/2026-05-11-remove-hub-and-paperclip-ceo.md) — why the CEO + hub were removed, what's gone, what's left, rollback path
+2. **Previous direction (still relevant context):** [`memos-setup/learnings/2026-04-28-collapse-to-single-tier-memos.md`](memos-setup/learnings/2026-04-28-collapse-to-single-tier-memos.md) — why holographic was deprecated
+3. **Previous direction (still relevant context):** [`memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md`](memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md) — why v2 was deprecated, what was fixed in v1
+4. **MVP-readiness brief:** [`tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf`](tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf) — pre-fix audit + remediation plan
+5. **Two-repo team explainer:** [`docs/architecture/two-repos.pdf`](docs/architecture/two-repos.pdf) — how Hermes (this repo) and MemOS (`sergiocoding96/MemOS`, your fork) fit together
+6. **Operator runbook:** [`tests/v1/STEP-BY-STEP.md`](tests/v1/STEP-BY-STEP.md) and [`tests/v1/CC-PROMPTS.md`](tests/v1/CC-PROMPTS.md) — phase-by-phase commands for fix → re-audit → ship
+7. **Sprint 1 history (still relevant):** [`memos-setup/learnings/2026-04-20-sprint-merge-log.md`](memos-setup/learnings/2026-04-20-sprint-merge-log.md) — what was shipped in the original v1 hardening sprint
 
-If you are working inside a **worktree** under `~/Coding/Hermes-wt/` or `~/Coding/MemOS-wt/`, read the `TASK.md` in that directory — it's your full brief.
-
-**Architecture status (2026-04-28):** Single-tier MemOS. Two-tier holographic+MemOS design was aspirational — Tier 1 (`holographic`) had zero rows in every profile after weeks of operation. Collapsed to one stack: agents read/write MemOS via `memos-toolset`, plus the always-on built-in memory layer in hermes-agent core. v2 plugin (`@memtensor/memos-local-plugin`) remains deprecated.
-
-**Sprint 2 status (2026-04-27):** v2 audit failed (mean 2.4/10, min 1/10). v1 audit (clean re-run) found a fixable system at mean 5.2/10 with five surgical bugs. All five fixed across 6 PRs (Hermes #14/#15/#16, MemOS #6/#7/#8). v2 stays as a dormant spike; do not enable in production.
+**Architecture status (2026-05-11):** Single orchestrator + workers. Sergio's local hermes profile orchestrates via the Kanban feature in hermes-agent (replaces the Paperclip CEO). Hermes workers (research-agent, email-marketing) keep their isolated MemOS cubes. The v2 team-sharing hub (port 18992) is gone — cross-cube reads, if needed, happen via Local API calls against MemOS v1 at `:8001`. The MemOS-hub MCP server, `scripts/ceo/`, `scripts/paperclip/`, `scripts/migration/`, and the v2 audit suite were deleted in the same PR.
 
 ## Working Rules
 - **ALWAYS use parallel agents for independent tasks.** When multiple fixes, tests, or investigations can run simultaneously, launch them all in one message. Never serialize work that can be parallelized.
@@ -34,11 +30,11 @@ If you are working inside a **worktree** under `~/Coding/Hermes-wt/` or `~/Codin
   **Agents starting a fresh session:** before doing anything else, spot-check that the "🚨 Active sprint" header matches the most recent decision doc in `memos-setup/learnings/` (sort by date) and the most recent strategic merge commits on `main`. If the header is stale, flag it to the operator and propose an update before continuing the requested task. Stale strategic context is the failure mode this rule exists to prevent.
 
 ## What This Is
-Layered multi-agent system: CEO (Claude Opus 4.6 via Paperclip) orchestrates specialized Hermes agents, each with isolated MemOS memory cubes. Two feedback loops: soft (user feedback → skill patches) and hard (Karpathy autoresearch-style metric threshold → auto-patch → re-run).
+Hermes Kanban-orchestrated multi-agent system. Sergio's local hermes profile dispatches tasks to specialized Hermes workers, each with isolated MemOS memory cubes. Two feedback loops: soft (user feedback → skill patches) and hard (Karpathy autoresearch-style metric threshold → auto-patch → re-run).
 
 ## Architecture
-- **CEO Agent**: Claude Opus 4.6 on Paperclip (http://tower.taila4a33f.ts.net:3100)
-- **Worker Agents**: Hermes (MiniMax M2.7) spawned via hermes-paperclip-adapter
+- **Orchestrator**: Sergio's local hermes profile, using the Kanban feature in hermes-agent to dispatch and track work
+- **Worker Agents**: Hermes (MiniMax M2.7) — `research-agent`, `email-marketing-agent`
 - **Memory**: MemOS (Qdrant + Neo4j + SQLite) at localhost:8001 — single-tier; per-profile `memory.provider: ''` (no external Tier 1 plugin)
 - **Web search**: Firecrawl (localhost:3002) → SearXNG (localhost:8888) — free, unlimited, aggregates Google+Bing+DDG+Startpage
 - **Web scraping**: Firecrawl (localhost:3002) with Playwright service for JS-rendered pages
@@ -50,14 +46,12 @@ Layered multi-agent system: CEO (Claude Opus 4.6 via Paperclip) orchestrates spe
 - Hermes skills: `~/.hermes/skills/`
 - Hermes env: `~/.hermes/.env` (FIRECRAWL_API_URL=http://localhost:3002)
 - MemOS source: `/home/openclaw/Coding/MemOS/`
-- Paperclip CEO SOUL: `~/.paperclip/instances/default/companies/.../agents/84a0aad9-.../instructions/SOUL.md`
 - Firecrawl env: `/home/openclaw/.openclaw/workspace/firecrawl/.env`
 
 ## MemOS Setup
 - All agents: GeneralTextMemory + TreeTextMemory + Fine MemReader mode
 - Email-marketing agent additionally gets PreferenceTextMemory
-- CEO uses CompositeCubeView (reads all cubes, results tagged with cube_id)
-- Worker agents use SingleCubeView (isolated to own cube)
+- Worker agents use SingleCubeView (isolated to own cube). If the orchestrator profile needs cross-cube reads, add an `orchestrator` user with multi-cube grants in `deploy/scripts/setup-memos-agents.py`.
 - async_mode: "sync" for all skill writes
 - visibility: "private" on all memory items
 - Scheduler: enabled, local queue (no Redis)
@@ -114,5 +108,5 @@ curl -s localhost:3002/v1/search -X POST -H "Content-Type: application/json" -d 
 
 ## Self-Improvement
 - quality_score = source_count(25%) + domain_coverage(25%) + freshness(20%) + depth(20%) + zero_result_penalty(10%)
-- Soft loop: user feedback → CEO patches skill
+- Soft loop: user feedback → orchestrator patches skill
 - Hard loop: score < threshold → auto-patch → re-run → keep if improved, revert if not

@@ -1,12 +1,12 @@
 # Hermes Multi-Agent Research System
 
-Layered multi-agent research and execution architecture using **Paperclip + Hermes + MemOS** with autoresearch-style self-improving feedback loops.
+Kanban-orchestrated multi-agent research and execution architecture using **Hermes + MemOS** with autoresearch-style self-improving feedback loops.
 
 ## What This Is
 
 A self-improving multi-agent system where:
-- **CEO agent (Claude Opus 4.6)** orchestrates via Paperclip, with access to all agent memories
-- **Specialized Hermes agents** (research, email marketing) each with isolated profiles, memory, and SOUL.md
+- **Orchestrator**: Sergio's local hermes profile uses the Kanban feature in hermes-agent to dispatch and track tasks
+- **Specialized Hermes workers** (research, email marketing) each with isolated profiles, memory, and SOUL.md
 - **Two feedback loops**: soft (user feedback → skill patches) + hard (Karpathy-style metric threshold → auto-patch → re-run)
 - **Skills evolve** from execution history — every failed or suboptimal run improves the skill for next time
 - **RL trajectory data** collected from every session for future model fine-tuning
@@ -14,14 +14,13 @@ A self-improving multi-agent system where:
 ## Architecture
 
 ```
-CEO (Claude Opus 4.6, Paperclip)
+Sergio's local hermes profile (orchestrator, via Kanban)
   └── dispatches tasks → Hermes Workers (via hermes_lib.py or CLI)
           ├── research-agent profile (isolated memory + SOUL.md)
           ├── email-marketing profile (isolated memory + SOUL.md)
           └── default profile (general purpose)
                   └── sessions_spawn(≤3 parallel domain researchers)
                           └── writes to Hermes memory + MemOS cube
-                                  └── CEO searches all cubes for synthesis
 ```
 
 Token burn prevention: agents communicate **only via MemOS shared state**, never agent-to-agent.
@@ -125,17 +124,17 @@ Tested and proven on Idealista, survives Cloudflare challenges. `managed_persist
 
 2. **Holographic provider** — local SQLite alongside MEMORY.md. Adds trust scoring (0.0-1.0 per fact), entity graph (`probe("Sergio")` returns all facts about you), contradiction detection, and compositional queries. Zero external deps.
 
-3. **MemOS** — cross-agent structured knowledge. CEO has ROOT access to all cubes, workers see only their own. Qdrant vectors + Neo4j graph + SQLite metadata. MEMRADER extraction via DeepSeek V3.
+3. **MemOS** — per-worker structured knowledge. Each worker owns its own cube and is credential-bound to it (BCrypt-verified API key + prefix bucketing). Qdrant vectors + Neo4j graph + SQLite metadata. MEMRADER extraction via DeepSeek V3.
 
 ## Self-Improving Feedback Loops
 
 ### Soft Loop (subjective)
-Your feedback → CEO interprets → `skill_manage(patch)` → skill updated for next run
+Your feedback → orchestrator interprets → `skill_manage(patch)` → skill updated for next run
 
 ### Hard Loop (Karpathy-style)
 ```
 quality_score = source_count(25%) + domain_coverage(25%) + freshness(20%) + depth(20%) + zero_result_penalty(10%)
-If score < threshold → CEO patches weakest stream → re-run → keep if improved, revert if not
+If score < threshold → orchestrator patches weakest stream → re-run → keep if improved, revert if not
 ```
 
 ### Quality Monitor Plugin
@@ -159,7 +158,7 @@ response = hermes_chat("What skills do I have?")
 # Research via research-agent profile
 brief = hermes_research("AI agents in real estate 2026")
 
-# Paperclip CEO → Hermes worker dispatch
+# Orchestrator → Hermes worker dispatch
 result = dispatch_to_hermes(
     task="Research competitor pricing for PlusVibe",
     agent="research-agent",
@@ -291,8 +290,7 @@ Skills (10), Browser/Camofox (10), Web Search (9), Memory (9), Compression (9), 
 6. ~~Set up Open WebUI + Python library~~ ✅
 7. ~~Enable RL trajectory collection~~ ✅
 8. Finish MemOS provisioning + build native Hermes plugin
-9. Install hermes-paperclip-adapter in Paperclip
-10. Add webhook route for GitHub PR auto-review
-11. Add Discord + WhatsApp to messaging gateway
-12. Run `infsh login` to activate Nano Banana 2 image generation
-13. Set up hermes gateway as systemd service (`hermes gateway install`)
+9. Add webhook route for GitHub PR auto-review
+10. Add Discord + WhatsApp to messaging gateway
+11. Run `infsh login` to activate Nano Banana 2 image generation
+12. Set up hermes gateway as systemd service (`hermes gateway install`)

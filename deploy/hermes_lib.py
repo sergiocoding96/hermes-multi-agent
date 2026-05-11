@@ -173,16 +173,14 @@ def hermes_api_chat(
     return data["choices"][0]["message"]["content"]
 
 
-# --- Convenience for Paperclip CEO integration ---
+# --- Convenience for orchestrator → worker dispatch ---
 
 def dispatch_to_hermes(
     task: str,
     agent: str = "research-agent",
     skills: Optional[List[str]] = None,
 ) -> dict:
-    """Dispatch a task to a Hermes agent and return structured result.
-
-    Designed for Paperclip CEO → Hermes worker dispatch.
+    """Dispatch a task to a Hermes worker and return structured result.
 
     Args:
         task: Full task description with all context

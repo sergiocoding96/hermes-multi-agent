@@ -7,7 +7,6 @@ Operator-installable systemd unit files for the Hermes deployment. These are **t
 | Unit | Status | Purpose |
 |---|---|---|
 | `memos-server.service` | active (RES/9) | v1 MemOS server (Qdrant + Neo4j + SQLite) auto-restart |
-| `memos-hub.service` | **legacy / v2** | Was for the v2 hub (`@memtensor/memos-local-plugin`). v2 was deprecated 2026-04-27. Disable + remove on existing deployments; do not install on new ones. |
 
 ## Why `memos-server.service` exists (RES/9)
 
@@ -49,7 +48,7 @@ The default `ExecStart=/usr/bin/python3.12 -m memos.api.server_api` assumes the 
 
 ## Removing the legacy v2 hub unit
 
-If `memos-hub.service` is still installed from the Sprint 2 era, remove it:
+If `memos-hub.service` is still installed from a pre-2026-05-11 deployment, remove it:
 
 ```bash
 systemctl --user disable --now memos-hub.service 2>/dev/null
@@ -57,4 +56,4 @@ rm -f ~/.config/systemd/user/memos-hub.service
 systemctl --user daemon-reload
 ```
 
-The v2 plugin path is no longer the production target. See `memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md`.
+The v2 plugin and the team-sharing hub are no longer in use. See `memos-setup/learnings/2026-05-11-remove-hub-and-paperclip-ceo.md`.

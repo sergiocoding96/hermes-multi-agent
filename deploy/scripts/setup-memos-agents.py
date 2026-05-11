@@ -1,6 +1,6 @@
 """MemOS provisioning for Hermes Multi-Agent System.
 
-Creates users, cubes, CEO shares, and per-agent API keys.
+Creates users, cubes, and per-agent API keys.
 Safe to re-run: existing keys, prefixes, and timestamps are preserved.
 Only newly-introduced agents get fresh keys generated.
 
@@ -58,12 +58,6 @@ KEY_PREFIX_LEN = 12  # matches the prefix length already deployed in v2 records
 
 AGENTS = [
     {
-        "user_id": "ceo",
-        "user_name": "ceo",
-        "role": UserRole.ROOT,
-        "description": "CEO Agent — Claude Opus 4.6 via Paperclip",
-    },
-    {
         "user_id": "research-agent",
         "user_name": "research-agent",
         "role": UserRole.USER,
@@ -78,12 +72,9 @@ AGENTS = [
 ]
 
 CUBES = [
-    {"cube_name": "ceo-cube",       "cube_id": "ceo-cube",       "owner_id": "ceo"},
     {"cube_name": "research-cube",  "cube_id": "research-cube",  "owner_id": "research-agent"},
     {"cube_name": "email-mkt-cube", "cube_id": "email-mkt-cube", "owner_id": "email-marketing-agent"},
 ]
-
-CEO_SHARES = ["research-cube", "email-mkt-cube"]
 
 
 # ── Key management ──────────────────────────────────────────────────────────
@@ -217,14 +208,6 @@ for cube in CUBES:
     except Exception:
         print(f"  Exists:  {cube['cube_name']}")
 
-print("\n=== Sharing cubes with CEO ===")
-for cube_id in CEO_SHARES:
-    try:
-        ok = um.add_user_to_cube("ceo", cube_id)
-        print(f"  Shared: {cube_id} -> CEO: {ok}")
-    except Exception as e:
-        print(f"  Error sharing {cube_id}: {e}")
-
 print("\n=== Generating agent API keys (bcrypt hashed) ===")
 raw_keys = write_auth_config(AGENTS)
 
@@ -249,7 +232,7 @@ Done. Next steps:
        MEMOS_AGENT_AUTH_CONFIG={AUTH_CONFIG_PATH}
        MEMOS_AUTH_REQUIRED=true
 
-  2. In agent config (Hermes SOUL.md / Paperclip):
+  2. In agent config (Hermes SOUL.md):
        Include header: Authorization: Bearer <key>
        when calling MemOS /product/add and /product/search
 

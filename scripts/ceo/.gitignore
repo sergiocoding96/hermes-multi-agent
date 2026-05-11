@@ -1,3 +1,0 @@
-# Never commit CEO credentials
-*.env
-*.env.*
