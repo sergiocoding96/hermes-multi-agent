@@ -173,16 +173,18 @@ def hermes_api_chat(
     return data["choices"][0]["message"]["content"]
 
 
-# --- Convenience for Paperclip CEO integration ---
+# --- Convenience for orchestrator → worker dispatch ---
 
 def dispatch_to_hermes(
     task: str,
     agent: str = "research-agent",
     skills: Optional[List[str]] = None,
 ) -> dict:
-    """Dispatch a task to a Hermes agent and return structured result.
+    """Dispatch a task to a Hermes worker agent and return structured result.
 
-    Designed for Paperclip CEO → Hermes worker dispatch.
+    Used by the local Hermes orchestrator (driven via Hermes Kanban) to fan
+    tasks out to worker profiles. The orchestrator aggregates results from
+    MemOS; this helper handles the one-shot subprocess call.
 
     Args:
         task: Full task description with all context

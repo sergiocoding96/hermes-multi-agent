@@ -266,7 +266,7 @@ Email 4: Breakup with door-open
 
 After creating the campaign deliverables, persist them to MemOS using the
 `memos_store` tool from the memos-toolset plugin. This compounds memory
-across sessions so the CEO and other agents can recall past campaigns,
+across sessions so the orchestrator and other agents can recall past campaigns,
 benchmarks and prospect insights.
 
 ### Why a tool, not curl
@@ -399,5 +399,5 @@ Present the final deliverable as:
 - Don't skip research. Every campaign starts with competitor analysis.
 - Don't use generic subject lines. Each must use a specific framework.
 - Don't define segments by demographics. Behavior > demographics.
-- Don't forget MemOS writes. CEO needs your outputs for cross-agent synthesis.
+- Don't forget MemOS writes. The orchestrator needs your outputs for cross-agent synthesis.
 - Don't write essays. Email copy should be scannable: short paragraphs, bullets, clear CTA.

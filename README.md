@@ -1,8 +1,8 @@
 # Hermes Multi-Agent Research System
 
-Layered multi-agent research and execution architecture using **Paperclip + Hermes + MemOS** with autoresearch-style self-improving feedback loops.
+Layered multi-agent research and execution architecture built on **Hermes + MemOS** with autoresearch-style self-improving feedback loops. Orchestration runs through the user's local Hermes profile via Hermes Kanban.
 
-> **Active migration in progress (Sprint 2).** Read [`memos-setup/learnings/2026-04-20-v2-migration-plan.md`](memos-setup/learnings/2026-04-20-v2-migration-plan.md) before making assumptions about the memory architecture — we're moving from a MemOS server model to an embedded plugin model. See also [`scripts/worktrees/migration/README.md`](scripts/worktrees/migration/README.md) for per-worktree task briefs.
+> **Active sprint (2026-05-11).** Removing the v2 MemOS hub and the Paperclip CEO. See [`memos-setup/learnings/2026-05-11-remove-hub-and-paperclip-ceo.md`](memos-setup/learnings/2026-05-11-remove-hub-and-paperclip-ceo.md) for rationale and what stays vs. goes. The MemOS **server** (Product 1) is still the authoritative memory backend.
 
 ## Quick Start on a Fresh Machine
 
@@ -37,8 +37,8 @@ See [`deploy/README.md`](deploy/README.md) for the full install reference.
 ## What This Is
 
 A self-improving multi-agent system where:
-- **CEO agent (Claude Opus 4.6)** orchestrates via Paperclip, with access to all agent memories
-- **Specialized Hermes agents** (research, email marketing) each with isolated profiles, memory, and SOUL.md
+- **The user's local Hermes profile orchestrates via Hermes Kanban**, with read access across all worker memory cubes
+- **Specialized Hermes worker agents** (research, email marketing) each with isolated profiles, memory, and SOUL.md
 - **Two feedback loops**: soft (user feedback → skill patches) + hard (Karpathy-style metric threshold → auto-patch → re-run)
 - **Skills evolve** from execution history — every failed or suboptimal run improves the skill for next time
 - **RL trajectory data** collected from every session for future model fine-tuning
@@ -46,14 +46,14 @@ A self-improving multi-agent system where:
 ## Architecture
 
 ```
-CEO (Claude Opus 4.6, Paperclip)
-  └── dispatches tasks → Hermes Workers (via hermes_lib.py or CLI)
+Local Hermes profile (orchestrator, via Hermes Kanban)
+  └── dispatches tasks → Hermes worker profiles (via hermes_lib.py or CLI)
           ├── research-agent profile (isolated memory + SOUL.md)
           ├── email-marketing profile (isolated memory + SOUL.md)
           └── default profile (general purpose)
                   └── sessions_spawn(≤3 parallel domain researchers)
                           └── writes to Hermes memory + MemOS cube
-                                  └── CEO searches all cubes for synthesis
+                                  └── orchestrator searches all cubes for synthesis
 ```
 
 Token burn prevention: agents communicate **only via MemOS shared state**, never agent-to-agent.
@@ -157,17 +157,17 @@ Tested and proven on Idealista, survives Cloudflare challenges. `managed_persist
 
 2. **Holographic provider** — local SQLite alongside MEMORY.md. Adds trust scoring (0.0-1.0 per fact), entity graph (`probe("Sergio")` returns all facts about you), contradiction detection, and compositional queries. Zero external deps.
 
-3. **MemOS** — cross-agent structured knowledge. CEO has ROOT access to all cubes, workers see only their own. Qdrant vectors + Neo4j graph + SQLite metadata. MEMRADER extraction via DeepSeek V3.
+3. **MemOS** — cross-agent structured knowledge. The orchestrator principal has read access to all cubes; workers see only their own. Qdrant vectors + Neo4j graph + SQLite metadata. MEMRADER extraction via DeepSeek V3.
 
 ## Self-Improving Feedback Loops
 
 ### Soft Loop (subjective)
-Your feedback → CEO interprets → `skill_manage(patch)` → skill updated for next run
+Your feedback → orchestrator interprets → `skill_manage(patch)` → skill updated for next run
 
 ### Hard Loop (Karpathy-style)
 ```
 quality_score = source_count(25%) + domain_coverage(25%) + freshness(20%) + depth(20%) + zero_result_penalty(10%)
-If score < threshold → CEO patches weakest stream → re-run → keep if improved, revert if not
+If score < threshold → orchestrator patches weakest stream → re-run → keep if improved, revert if not
 ```
 
 ### Quality Monitor Plugin
@@ -191,7 +191,7 @@ response = hermes_chat("What skills do I have?")
 # Research via research-agent profile
 brief = hermes_research("AI agents in real estate 2026")
 
-# Paperclip CEO → Hermes worker dispatch
+# Orchestrator → Hermes worker dispatch
 result = dispatch_to_hermes(
     task="Research competitor pricing for PlusVibe",
     agent="research-agent",
@@ -322,8 +322,8 @@ Skills (10), Browser/Camofox (10), Web Search (9), Memory (9), Compression (9), 
 5. ~~Consolidate deployment source into `deploy/`~~ ✅
 6. ~~Set up Open WebUI + Python library~~ ✅
 7. ~~Enable RL trajectory collection~~ ✅
-8. Finish MemOS provisioning + build native Hermes plugin
-9. Install hermes-paperclip-adapter in Paperclip
+8. Finish MemOS provisioning + provision the `orchestrator` MemOS principal with cross-cube read grants
+9. Wire Hermes Kanban as the orchestration surface on the user's local profile
 10. Add webhook route for GitHub PR auto-review
 11. Add Discord + WhatsApp to messaging gateway
 12. Run `infsh login` to activate Nano Banana 2 image generation

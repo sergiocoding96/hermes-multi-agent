@@ -345,7 +345,7 @@ Include at the end of the brief:
 
 After writing the research brief to the chat, persist it to MemOS using the
 `memos_store` tool from the memos-toolset plugin. This compounds memory across
-sessions so the CEO and other agents can recall past research.
+sessions so the orchestrator and other agents can recall past research.
 
 ### Why a tool, not curl
 

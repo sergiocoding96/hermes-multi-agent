@@ -11,7 +11,7 @@
 #   - Real file/dir exists     → warn, skip
 #   - No entry exists          → create symlink
 #
-# Usage: bash scripts/migration/symlink-badass-skills.sh
+# Usage: bash scripts/symlink-badass-skills.sh
 
 set -euo pipefail
 

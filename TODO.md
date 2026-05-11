@@ -1,35 +1,35 @@
 # TODO — Hermes Multi-Agent System
 
-## Phase 1: Infrastructure (Current)
-- [x] Research skills created (research-coordinator, social-media, code, academic, market-intelligence, hn-research, web-research)
-- [x] Firecrawl configured (localhost:3002, NUM_WORKERS=4)
-- [x] Hermes FIRECRAWL_API_URL set
-- [x] MemOS architecture decisions finalized (TreeText+Fine everywhere)
-- [x] PROJECT-STATE recovery document created
-- [ ] Write MemOS provisioning script (`setup-memos-agents.py`) — users, cubes, CEO shares
-- [x] Configure MemOS `.env` — switched to local sentence-transformers embedder (all-MiniLM-L6-v2, 384 dim) to avoid MiniMax embedding API rate limits. MiniMax still used for MEMRADER and chat.
-- [x] Start MemOS server and verify add/search work — end-to-end verified: write to research-cube, write to email-mkt-cube, CEO cross-cube search returns results from both
-- [x] Verify Neo4j (bolt://localhost:7687) and Qdrant (localhost:6333) are healthy
-- [x] Patched MemOS `api/config.py` to support `sentence_transformer` embedder backend (upstream only had `universal_api` and `ollama`)
+## Sprint 3 (2026-05-11) — Remove hub + Paperclip CEO
 
-## Phase 2: Agent Implementation
-- [ ] Install `hermes-paperclip-adapter` in Paperclip adapter registry
-- [ ] Write CEO SOUL.md with feedback loop logic (soft + hard)
-- [ ] Add `quality_score` self-eval to `research-coordinator` SKILL.md
-- [ ] Add MemOS dual-write (POST /product/add) to research-coordinator output step
-- [ ] Create `email-marketing-plusvibe` Hermes skill (plusvibe.ai email marketing)
-- [ ] Add MemOS dual-write to email-marketing skill
+See [`memos-setup/learnings/2026-05-11-remove-hub-and-paperclip-ceo.md`](memos-setup/learnings/2026-05-11-remove-hub-and-paperclip-ceo.md) for context.
 
-## Phase 3: Testing & Self-Improvement
-- [x] Test MemOS infrastructure end-to-end (write, search, cross-cube CEO search)
-- [ ] Test research agent with MemOS dual-write
-- [ ] Test email-marketing agent end-to-end
-- [ ] Run hard feedback loop: score research output, auto-patch if below threshold
-- [ ] Run soft feedback loop: user feedback → CEO skill patch
-- [ ] Verify skill self-improvement: confirm skill_manage(patch) works with MiniMax M2.7
+- [x] Delete `scripts/ceo/`, `scripts/paperclip/`, `scripts/migration/` (except `symlink-badass-skills.sh`)
+- [x] Delete `tests/v2/` and `scripts/worktrees/migration/`
+- [x] Delete `deploy/systemd/memos-hub.service`
+- [x] Strip CEO/Paperclip mentions from `hermes_lib.py`, SOUL files, skills
+- [x] Rewrite `CLAUDE.md`, `README.md`, `deploy/README.md`, `deploy/ARCHITECTURE.md`
+- [x] Replace `ceo` user with `orchestrator` in `deploy/config/agents-auth.example.json`
+- [ ] Regenerate the live `agents-auth.json` with the new `orchestrator` principal
+- [ ] Provision `orchestrator` MemOS principal with read grants to `research-cube` + `email-mkt-cube`
+- [ ] Wire Hermes Kanban as the dispatch surface on the user's local Hermes profile
+- [ ] Operator-side cleanup on each host:
+  - [ ] `systemctl --user disable --now memos-hub.service`
+  - [ ] Remove `~/.claude/memos-hub.env` and the `memos-hub` block from `~/.claude.json`
+  - [ ] Archive `~/.paperclip/instances/default/` (or uninstall `paperclipai`)
 
-## Phase 4: Production Readiness
+## Always-on infra (status)
+
+- [x] MemOS server running at localhost:8001 (Qdrant + Neo4j + SQLite)
+- [x] Firecrawl + SearXNG at localhost:3002 + 8888
+- [x] Camofox at localhost:9377
+- [x] Worker profiles (`research-agent`, `email-marketing`) with `memos-toolset` plugin
+- [x] Shared `badass-skills` via `external_dirs`
+
+## Open work (carried over)
+
 - [ ] Add error handling to MemOS writes (retry on 500, timeout on sync)
-- [ ] Add MemOS health check to CEO HEARTBEAT
 - [ ] Monitor Qdrant/Neo4j resource usage under sustained agent load
-- [ ] Document runbook for starting full stack (Neo4j → Qdrant → MemOS → Firecrawl → Hermes → Paperclip)
+- [ ] Document runbook for starting full stack (Neo4j → Qdrant → MemOS → Firecrawl → Hermes)
+- [ ] Add webhook route for GitHub PR auto-review
+- [ ] Add Discord + WhatsApp to messaging gateway
