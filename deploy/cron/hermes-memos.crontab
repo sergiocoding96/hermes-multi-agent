@@ -1,8 +1,13 @@
-# Hermes + MemOS cron entries.
+# Hermes + memos-local-plugin 2.0 cron entries.
 # Append to user crontab via:
 #   crontab -l 2>/dev/null > /tmp/cron.bak
 #   cat /tmp/cron.bak deploy/cron/hermes-memos.crontab | crontab -
-# Or use deploy/scripts/install-infra.sh.
 
-# (Add entries here as maintenance jobs come online — memory consolidation,
-# trajectory export, skill audit, etc.)
+# Promote synthesis-layer rows to share_scope='local' every 15 min so the
+# orchestrator (sergio's profile) can read across cubes. Hybrid SQLite-read
+# + HTTP-POST design — see scripts/promote-memos-shares.py.
+*/15 * * * * /home/openclaw/Coding/Hermes/scripts/promote-memos-shares.py >> /home/openclaw/.hermes/memos-plugin/logs/promote.log 2>&1
+
+# Weekly check for new @memtensor/memos-local-plugin releases on npm.
+# Silent on no-op; prints upgrade instructions when a newer stable is available.
+@weekly /home/openclaw/Coding/Hermes/scripts/check-memos-plugin-update.sh >> /home/openclaw/.hermes/memos-plugin/logs/update-check.log 2>&1
