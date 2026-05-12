@@ -156,6 +156,13 @@ pkill -f "bridge.cts --agent=hermes"
 @weekly /home/openclaw/Coding/Hermes/scripts/check-memos-plugin-update.sh >> ~/.hermes/memos-plugin/logs/update-check.log 2>&1
 ```
 
+> **Worktree path note:** Until you merge this branch into main, the live
+> crontab references the Claude Code worktree path
+> (`/home/openclaw/Coding/Hermes/.claude/worktrees/nice-mclaren-13f017/scripts/...`).
+> After merging + `git pull`, run **`bash scripts/post-merge-fixup.sh`** once to
+> swap the cron paths to the canonical `/home/openclaw/Coding/Hermes/scripts/...`.
+> Idempotent and non-destructive (backs up your crontab to /tmp first).
+
 Tail logs:
 
 ```bash
