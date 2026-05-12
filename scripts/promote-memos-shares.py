@@ -11,13 +11,16 @@ Episodes do not have a /share endpoint in 2.0 — the constituent traces
 carry the synthesis (summary field). Promoting traces gives the
 orchestrator the "constant flow of synthesis" we want.
 
-Hybrid approach (necessary because 2.0.0 HTTP list endpoints filter by
-the bridge's *active namespace*, so cross-cube enumeration via HTTP
-returns only one profile's rows):
-  - Listing: read SQLite directly (additive migrations are upgrade-safe;
-    renames break loudly and we update this script).
-  - Sharing: POST /api/v1/{resource}/{id}/share — the public viewer
-    contract, upgrade-safe across minor versions.
+Implementation note: in 2.0.0 the HTTP API (`POST /api/v1/{resource}/{id}/share`)
+enforces the bridge's *active namespace* on both reads and writes — so a
+cross-cube promoter that talks HTTP can only ever touch one profile's rows.
+Internal pipeline artifacts (skills, policies, world-models created by the
+bridge's "default" namespace) are unreachable via HTTP at all. To work
+around this, the promoter writes directly to the SQLite store. Schema
+migrations in 2.0 are additive (column adds), so direct writes to the
+stable `share_scope` / `share_target` / `shared_at` columns are upgrade-safe
+across minor versions. A future column rename would break this script
+loudly and we'd update it.
 
 Usage:
   ./promote-memos-shares.py           # run once, exit
@@ -32,49 +35,15 @@ Cron entry (every 15 min):
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sqlite3
 import sys
 import time
-import urllib.error
-import urllib.request
-from typing import Any
 
-BRIDGE = "http://127.0.0.1:18800"
 DB = os.path.expanduser("~/.hermes/memos-plugin/data/memos.db")
 
-# Maps SQLite table → URL path segment for POST /api/v1/{segment}/{id}/share.
-RESOURCES = {
-    "traces": "traces",
-    "policies": "policies",
-    "skills": "skills",
-    "world_model": "world-models",
-}
-
-
-def _post_share(resource_path: str, row_id: str, scope: str, bridge: str) -> None:
-    body = json.dumps({
-        "scope": scope,
-        "target": None,
-        "sharedAt": int(time.time() * 1000),
-    }).encode()
-    req = urllib.request.Request(
-        f"{bridge}/api/v1/{resource_path}/{row_id}/share",
-        data=body,
-        method="POST",
-        headers={"Content-Type": "application/json"},
-    )
-    urllib.request.urlopen(req, timeout=10).read()
-
-
-def _list_private_ids(con: sqlite3.Connection, table: str) -> list[str]:
-    """Return row IDs where share_scope is null or 'private'."""
-    rows = con.execute(
-        f"SELECT id FROM {table} "
-        f"WHERE share_scope IS NULL OR share_scope = 'private'"
-    ).fetchall()
-    return [r[0] for r in rows]
+# Tables that have a share_scope column in 2.0 (migration 009).
+RESOURCES = ("traces", "policies", "skills", "world_model")
 
 
 def main() -> int:
@@ -84,8 +53,6 @@ def main() -> int:
     parser.add_argument("--scope", default="local",
                         choices=("private", "local", "public", "hub"),
                         help="Target share_scope (default: local).")
-    parser.add_argument("--bridge", default=BRIDGE,
-                        help=f"Bridge URL (default: {BRIDGE}).")
     parser.add_argument("--db", default=DB,
                         help=f"SQLite path (default: {DB}).")
     args = parser.parse_args()
@@ -94,43 +61,46 @@ def main() -> int:
         print(f"[promote] db not found: {args.db}", file=sys.stderr)
         return 2
 
-    # Probe bridge health first so a cron failure logs a clean reason.
-    try:
-        urllib.request.urlopen(f"{args.bridge}/api/v1/ping", timeout=5).read()
-    except (urllib.error.URLError, urllib.error.HTTPError) as e:
-        print(f"[promote] bridge unreachable at {args.bridge}: {e}", file=sys.stderr)
-        return 2
-
-    # Read-only connection — we only enumerate; HTTP does the writes.
-    con = sqlite3.connect(f"file:{args.db}?mode=ro", uri=True, timeout=30)
+    # Open read-write — direct SQL is the only path that works for
+    # cross-namespace promotion (HTTP API enforces bridge's active
+    # namespace on the share endpoint, see module docstring).
+    con = sqlite3.connect(args.db, timeout=30)
     try:
         summary: dict[str, int] = {}
-        for table, resource_path in RESOURCES.items():
+        now_ms = int(time.time() * 1000)
+
+        for table in RESOURCES:
             try:
-                ids = _list_private_ids(con, table)
+                rows = con.execute(
+                    f"SELECT id FROM {table} "
+                    f"WHERE share_scope IS NULL OR share_scope = 'private'"
+                ).fetchall()
             except sqlite3.Error as e:
-                # Table might not exist on older plugin versions; skip with a note.
-                print(f"[promote] {table} list failed: {e}", file=sys.stderr)
+                # Table might not exist on older plugin versions; skip with note.
+                print(f"[promote] {table} enum failed: {e}", file=sys.stderr)
+                continue
+
+            ids = [r[0] for r in rows]
+            if args.dry:
+                for row_id in ids:
+                    print(f"[dry] {table} {row_id} → {args.scope}")
+                summary[table] = len(ids)
                 continue
 
             promoted = 0
-            for row_id in ids:
-                if args.dry:
-                    print(f"[dry] {table} {row_id} → {args.scope}")
-                    promoted += 1
-                    continue
-                try:
-                    _post_share(resource_path, row_id, args.scope, args.bridge)
-                    promoted += 1
-                except urllib.error.HTTPError as e:
-                    # 400/404 are non-fatal (row may have been deleted between
-                    # list and promote, or scope already set).
-                    if e.code in (400, 404):
-                        continue
-                    print(f"[promote] {table} {row_id}: HTTP {e.code}", file=sys.stderr)
-                except urllib.error.URLError as e:
-                    print(f"[promote] {table} {row_id}: {e}", file=sys.stderr)
-                    return 1
+            try:
+                with con:  # transaction
+                    for row_id in ids:
+                        con.execute(
+                            f"UPDATE {table} "
+                            f"SET share_scope=?, shared_at=? "
+                            f"WHERE id=? AND (share_scope IS NULL OR share_scope='private')",
+                            (args.scope, now_ms, row_id),
+                        )
+                        promoted += 1
+            except sqlite3.Error as e:
+                print(f"[promote] {table} update failed: {e}", file=sys.stderr)
+                return 1
             summary[table] = promoted
     finally:
         con.close()
