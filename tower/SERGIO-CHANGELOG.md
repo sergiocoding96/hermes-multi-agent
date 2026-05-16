@@ -1,4 +1,4 @@
-# Tower changes on sergio (summary for `mohammed-work`)
+# Tower changes on sergio (summary for `mohrizk90/work`)
 
 Recorded **2026-05-16**. Secrets stay on server only (`~/.hermes/profiles/*/.env`, `Coding/Hermes/agents-auth.json`).
 

@@ -9,4 +9,4 @@ Operations documentation and scripts for **Tower** — Hermes multi-agent Discor
 | `tower/docs/` | Architecture, Discord layout, Krati setup, inventory |
 | `tower/scripts/` | Idempotent fix/provision scripts (run on `sergio` via SSH) |
 
-**Branch:** `mohammed-work` — Tower solidification work (2026-05), including Krati agent, personal-agent Discord hub alignment, MemOS notes.
+**Branch:** `mohrizk90/work` — Tower solidification work (2026-05), including Krati agent, personal-agent Discord hub alignment, MemOS notes.
