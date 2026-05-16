@@ -19,6 +19,8 @@ Different domains require different strategies. Check this table first — using
 | `arxiv.org/abs/*` | `web_extract()` or `curl` API | Both work. For bulk paper lookup prefer the arXiv REST API |
 | `news.ycombinator.com` | `web_extract()` | Plain HTML, works reliably |
 | `youtube.com` | Use `youtube-content` skill | Firecrawl can't get transcripts — use the dedicated skill |
+| `idealista.*`, `ticketmaster.*`, `glassdoor.*`, sites returning `server: DataDome` | **Cloak service at `localhost:9378`** — see §4 | DataDome/anti-bot. Firecrawl will silently 403. |
+| Anything behind Cloudflare Turnstile / Imperva | **Cloak service at `localhost:9378`** — see §4 | Stock Playwright (Firecrawl) fingerprint fails the challenge. |
 | Everything else | `web_extract()` standard | Default approach |
 
 ### Reddit URL rewrite rule
@@ -124,7 +126,46 @@ When the above fail and the page requires JavaScript to render content.
 **Best for:**
 - Dashboards with live data
 - Pages that load on scroll
-- Sites with anti-bot protection that need full browser
+- Pages that need JS but are NOT behind aggressive anti-bot (DataDome, Cloudflare turnstile, Imperva)
+
+## 4. Cloak Stealth Service (Anti-Bot Protected Pages)
+
+**Use when Firecrawl returns 403 or empty content, or the domain is on the anti-bot list below.**
+
+Hermes runs a CloakBrowser-backed stealth service at `localhost:9378`. It uses Chromium with C++-level fingerprint patches, persistent per-domain cookie storage, request pacing, and an optional CapSolver fallback for DataDome captchas.
+
+```bash
+curl -X POST http://localhost:9378/v1/scrape \
+  -H "Content-Type: application/json" \
+  -d '{"url":"<url>","formats":["html","markdown"]}'
+```
+
+**Anti-bot domains — route here, not Firecrawl:**
+- `idealista.com` / `idealista.*` (DataDome)
+- `ticketmaster.*` (Imperva / DataDome)
+- `glassdoor.com` (DataDome)
+- `linkedin.com` (Cloudflare + custom)
+- Anything that returns `server: DataDome`, `server: cloudflare` + Turnstile, or `Set-Cookie: datadome=...`
+
+Response shape mirrors Firecrawl:
+```json
+{ "success": true,
+  "data": { "html": "...", "markdown": "...",
+            "metadata": { "statusCode": 200, "engine": "cloak-stealth-chromium" } },
+  "challenge": false }
+```
+
+If `"challenge": true` and `success: false`, the IP has been pushed to DataDome CAPTCHA mode. Options: wait 30–60 min for cooldown, or ensure CapSolver is enabled (see `~/.config/systemd/user/cloak-service.service.d/capsolver.conf`).
+
+PDF render of a single page:
+```bash
+curl -X POST http://localhost:9378/v1/save-pdf \
+  -H "Content-Type: application/json" \
+  -d '{"url":"<url>"}'
+# Returns {"success": true, "path": "/tmp/cloak-pdf-<ts>.pdf", "size_bytes": ...}
+```
+
+**Camofox status:** the legacy Camofox service (port 9377, Camoufox Firefox-fork) is still used for the *interactive* browser tool (snapshot/click/type) called by the `browser` skill, but is **deprecated for new scrape work**. All one-shot scraping routes to Cloak. See `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md`.
 
 ## Decision Tree
 

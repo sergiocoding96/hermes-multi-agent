@@ -41,8 +41,9 @@ Layered multi-agent system: CEO (Claude Opus 4.6 via Paperclip) orchestrates spe
 - **Worker Agents**: Hermes (MiniMax M2.7) spawned via hermes-paperclip-adapter
 - **Memory**: MemOS (Qdrant + Neo4j + SQLite) at localhost:8001 — single-tier; per-profile `memory.provider: ''` (no external Tier 1 plugin)
 - **Web search**: Firecrawl (localhost:3002) → SearXNG (localhost:8888) — free, unlimited, aggregates Google+Bing+DDG+Startpage
-- **Web scraping**: Firecrawl (localhost:3002) with Playwright service for JS-rendered pages
-- **Anti-bot browser**: Camofox (localhost:9377) — Camoufox Firefox fork with C++ fingerprint spoofing, bypasses Cloudflare/anti-bot
+- **Web scraping (default)**: Firecrawl (localhost:3002) with Playwright service for JS-rendered pages
+- **Stealth scraping (DataDome / CF Turnstile / Imperva)**: **Cloak service (localhost:9378)** — CloakBrowser stealth Chromium 146 + persistent per-domain cookies + pacing + CapSolver fallback. See `tower/docs/browser-stealth-benchmark-2026-05-16.md` and `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md`.
+- **Interactive browser (legacy, deprecated)**: Camofox (localhost:9377) — Camoufox Firefox fork. Still serves the agent's interactive `browser_*` tool (snapshot/click/type) until Cloak service grows feature parity in Phase 2. Do **not** route new scrape work here.
 - **Token burn rule**: Agents communicate ONLY via MemOS shared state, never agent-to-agent
 
 ## Key Paths
@@ -80,7 +81,8 @@ Run `./setup-web-stack.sh` to bootstrap everything. Manual steps:
 |------|------|-----|
 | `web_search()` | Firecrawl → SearXNG | Free, unlimited, multi-engine aggregation |
 | `web_extract()` | Firecrawl → Playwright | Handles JS-rendered pages |
-| Anti-bot sites (Idealista, etc.) | Camofox `browser_navigate` + `browser_snapshot` | Camoufox fingerprint spoofing bypasses Cloudflare |
+| Anti-bot sites (Idealista, Ticketmaster, Glassdoor — anything returning `server: DataDome` or Cloudflare Turnstile) | **Cloak service `localhost:9378/v1/scrape`** | CloakBrowser C++ stealth patches + persistent cookies + CapSolver fallback. ~3.9s/page on clean IPs. |
+| Interactive browse (click/type/snapshot) via agent's `browser` skill | Camofox `browser_navigate` + `browser_snapshot` (legacy) | Still in use until Cloak service exposes the interactive endpoints (Phase 2). |
 | Simple static pages | Firecrawl `/v1/scrape` | Fast, no browser overhead |
 
 ## Domain Routing Rules (enforced in skills)
@@ -107,9 +109,24 @@ python setup-memos-agents.py
 hermes chat -q "Research [topic]" --skill research-coordinator
 
 # Verify web stack health
-curl -s localhost:9377/health          # Camofox
+curl -s localhost:9378/health          # Cloak (primary stealth scraper)
+curl -s localhost:9377/health          # Camofox (legacy interactive browser)
 curl -s localhost:8888/search?q=test&format=json  # SearXNG
 curl -s localhost:3002/v1/search -X POST -H "Content-Type: application/json" -d '{"query":"test","limit":1}'  # Firecrawl search
+
+# Stealth scrape via Cloak
+curl -s -X POST localhost:9378/v1/scrape -H "Content-Type: application/json" \
+  -d '{"url":"https://www.idealista.com/venta-viviendas/estepona-malaga/","formats":["html","markdown"]}'
+
+# Service management
+systemctl --user status cloak-service.service
+systemctl --user restart cloak-service.service
+journalctl --user -u cloak-service.service -n 50 --no-pager
+
+# Add CapSolver API key (when you have one):
+#   cp ~/.config/systemd/user/cloak-service.service.d/capsolver.conf.example \
+#      ~/.config/systemd/user/cloak-service.service.d/capsolver.conf
+#   edit the file, then: systemctl --user daemon-reload && systemctl --user restart cloak-service
 ```
 
 ## Self-Improvement
