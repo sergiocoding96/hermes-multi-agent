@@ -42,8 +42,8 @@ Layered multi-agent system: CEO (Claude Opus 4.6 via Paperclip) orchestrates spe
 - **Memory**: MemOS (Qdrant + Neo4j + SQLite) at localhost:8001 — single-tier; per-profile `memory.provider: ''` (no external Tier 1 plugin)
 - **Web search**: Firecrawl (localhost:3002) → SearXNG (localhost:8888) — free, unlimited, aggregates Google+Bing+DDG+Startpage
 - **Web scraping (default)**: Firecrawl (localhost:3002) with Playwright service for JS-rendered pages
-- **Stealth scraping (DataDome / CF Turnstile / Imperva)**: **Cloak service (localhost:9378)** — CloakBrowser stealth Chromium 146 + persistent per-domain cookies + pacing + CapSolver fallback. See `tower/docs/browser-stealth-benchmark-2026-05-16.md` and `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md`.
-- **Interactive browser (legacy, deprecated)**: Camofox (localhost:9377) — Camoufox Firefox fork. Still serves the agent's interactive `browser_*` tool (snapshot/click/type) until Cloak service grows feature parity in Phase 2. Do **not** route new scrape work here.
+- **Stealth scraping + interactive browser tool**: **Cloak service (localhost:9378)** — CloakBrowser stealth Chromium 146 with C++ fingerprint patches, persistent per-domain cookies, request pacing, CapSolver captcha fallback, **and** the full interactive surface (`/tabs/*` endpoints: snapshot/click/type/scroll/back/screenshot) that `browser_camofox.py` calls. `CAMOFOX_URL` env points at port 9378 since 2026-05-16.
+- **Camofox (deprecated, warm-rollback only)**: still running on port 9377 as a fallback target. Will be stopped + disabled after ~1 week of clean Cloak production operation. See `tower/docs/browser-stealth-benchmark-2026-05-16.md` and `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md` for the rollback procedure.
 - **Token burn rule**: Agents communicate ONLY via MemOS shared state, never agent-to-agent
 
 ## Key Paths
@@ -82,7 +82,7 @@ Run `./setup-web-stack.sh` to bootstrap everything. Manual steps:
 | `web_search()` | Firecrawl → SearXNG | Free, unlimited, multi-engine aggregation |
 | `web_extract()` | Firecrawl → Playwright | Handles JS-rendered pages |
 | Anti-bot sites (Idealista, Ticketmaster, Glassdoor — anything returning `server: DataDome` or Cloudflare Turnstile) | **Cloak service `localhost:9378/v1/scrape`** | CloakBrowser C++ stealth patches + persistent cookies + CapSolver fallback. ~3.9s/page on clean IPs. |
-| Interactive browse (click/type/snapshot) via agent's `browser` skill | Camofox `browser_navigate` + `browser_snapshot` (legacy) | Still in use until Cloak service exposes the interactive endpoints (Phase 2). |
+| Interactive browse (click/type/snapshot) via agent's `browser` skill | **Cloak service** `/tabs/*` endpoints (called transparently via `browser_camofox.py` — module name kept for backward compatibility, talks to Cloak since 2026-05-16) | Chromium-based, lower latency than the old Firefox-fork path, same ARIA-snapshot format byte-for-byte. |
 | Simple static pages | Firecrawl `/v1/scrape` | Fast, no browser overhead |
 
 ## Domain Routing Rules (enforced in skills)

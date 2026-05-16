@@ -165,7 +165,7 @@ curl -X POST http://localhost:9378/v1/save-pdf \
 # Returns {"success": true, "path": "/tmp/cloak-pdf-<ts>.pdf", "size_bytes": ...}
 ```
 
-**Camofox status:** the legacy Camofox service (port 9377, Camoufox Firefox-fork) is still used for the *interactive* browser tool (snapshot/click/type) called by the `browser` skill, but is **deprecated for new scrape work**. All one-shot scraping routes to Cloak. See `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md`.
+**Camofox status (2026-05-16, post Phase 2):** the Cloak service now exposes the full `/tabs/*` interactive surface (snapshot/click/type/scroll/back/screenshot) and is the active backend for the agent's `browser` skill (via `CAMOFOX_URL` env pointing at port 9378). The Camofox systemd service is still running as a warm-rollback target only; it receives no agent traffic. See `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md` for the cutover and rollback details.
 
 ## Decision Tree
 

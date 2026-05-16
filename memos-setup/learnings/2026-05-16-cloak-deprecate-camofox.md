@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-16
 **Author:** sergio + claude (collaborative session)
-**Status:** Phase 1 deployed; Phase 2 (Camofox interactive endpoint mirror) planned
+**Status:** Phase 1 + Phase 2 both deployed. Camofox kept hot as warm-rollback target; no longer in the production traffic path.
 
 ## TL;DR
 
@@ -65,18 +65,61 @@ During benchmarking we ran 20+ sequential requests from the Tower's home IP and 
 - Camofox `/tabs` confirmed working again
 - Restored interactive browser tool while Phase 2 is pending
 
-## What's deferred (Phase 2)
+## Phase 2 — completed same day (2026-05-16)
 
-The Cloak service does not yet expose the interactive `/tabs/:id/{snapshot,click,type,scroll,press,back,screenshot}` endpoints that `tools/browser_camofox.py` requires for the agent's `browser_*` skill calls. The accessibility-snapshot format (refs + tree extraction) is ~400 LOC of careful Playwright wrapping and was out of scope today.
+All Camofox interactive endpoints now mirrored in the Cloak service:
 
-**Phase 2 plan:**
-1. Mirror Camofox's `/tabs/:id/snapshot` using `page.accessibility.snapshot()` + a ref-assignment shim
-2. Mirror `/tabs/:id/{click,type,scroll,press,back,screenshot}` (thin Playwright wrappers)
-3. Switch `CAMOFOX_URL` env to point at port 9378 (Cloak service)
-4. Stop + disable `camofox.service`
-5. Mark `~/.hermes/hermes-agent/tools/browser_camofox.py` as deprecated (keep file for rollback)
+| Endpoint | Camofox | Cloak (`localhost:9378`) | Notes |
+|---|---|---|---|
+| `POST /tabs` | ✓ | ✓ | per-(user, session) BrowserContext, full assets |
+| `POST /tabs/:id/navigate` | ✓ | ✓ | networkidle wait + refs reset |
+| `GET /tabs/:id/snapshot` | ✓ | ✓ | **byte-for-byte format match** — see diff-test below |
+| `POST /tabs/:id/click` | ✓ | ✓ | with auto-refresh on stale ref + mouse-sequence fallback |
+| `POST /tabs/:id/type` | ✓ | ✓ | click + clear + type (delay 30ms) + optional Enter |
+| `POST /tabs/:id/scroll` | ✓ | ✓ | `page.mouse.wheel(0, ±600)` |
+| `POST /tabs/:id/press` | ✓ | ✓ | `page.keyboard.press()` |
+| `POST /tabs/:id/back` | ✓ | ✓ | `page.go_back()` + refresh refs |
+| `GET /tabs/:id/screenshot` | ✓ | ✓ | PNG base64 |
+| `DELETE /sessions/:userId` | ✓ | ✓ | closes all tabs + context |
 
-Estimated effort: 1 focused day. Risk: ARIA snapshot format mismatch breaks `browser_*` skill flows until tuned. Should be done on a feature branch with the existing Camofox e2e tests as the regression bar.
+**Implementation:** `/home/openclaw/.hermes/cloak-service/interactive.py` (~450 LOC). Uses Playwright Python's `page.locator('body').aria_snapshot()` which produces identical YAML to Camofox's Node Playwright. Refs are server-side state, built by parsing the YAML in document order and tagging interactive roles; `[eN]` markers injected into the snapshot text before return so `browser_camofox.py` parsing works unchanged.
+
+### Diff-test result (HN homepage, same URL, same wall-clock)
+- Camofox: `refsCount=222, totalChars=41004`
+- Cloak:   `refsCount=222, totalChars=41004`
+- Diff: 182 lines, **100% content drift** (HN updated story timestamps and vote counts between the two scrapes) — **0% format drift**
+- Ref positions match: `e15` resolves to the same DOM node in both engines
+
+### End-to-end validation
+Full agent-style flow against Cloak (`/tmp/e2e_cloak_as_camofox.py`):
+- `POST /tabs` (HN): 1.41 s
+- `GET /snapshot`: 0.23 s, 222 refs with `[eN]` markers
+- `POST /click` (ref=e3, "new" link): 5.61 s, navigated to `/news`
+- `GET /snapshot` (post-click): 0.10 s
+- `POST /navigate` (DDG): 1.22 s
+- `POST /back`: 0.60 s
+- `GET /screenshot`: 0.13 s, 270 KB PNG
+- `DELETE /sessions/:userId`: 0.04 s
+
+All assertions passed.
+
+### Cutover (the actual production flip)
+- Backed up `.env` to `~/.hermes/.env.pre-cloak-flip`
+- Changed `CAMOFOX_URL=http://localhost:9377` → `http://localhost:9378`
+- Restarted: `hermes-gateway`, `hermes-gateway-arinze`, `-hr-agent`, `-krati`, `-research-agent`, `-sergio` — all came back `active`
+- Camofox service is **still running** as warm-rollback target, but receives no agent traffic. Decision: stop+disable only after ~1 week of clean production operation.
+
+### Rollback (single command, ~30 s)
+```bash
+sed -i 's|^CAMOFOX_URL=http://localhost:9378$|CAMOFOX_URL=http://localhost:9377|' ~/.hermes/.env
+systemctl --user restart hermes-gateway hermes-gateway-arinze hermes-gateway-hr-agent hermes-gateway-krati hermes-gateway-research-agent hermes-gateway-sergio
+```
+…or restore from `~/.hermes/.env.pre-cloak-flip`.
+
+### Phase 3 — when ready
+- After ~1 week of clean operation: stop + disable Camofox systemd, leave install in `node_modules/` for any future code reference
+- Mark `tools/browser_camofox.py` as deprecated in its module docstring (don't rename — would break imports in `browser_tool.py`)
+- Optionally move the Cloak service source from the Tower host into this repo under `tower/services/cloak-service/` so it's version-controlled
 
 ## Rollback path
 
