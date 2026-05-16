@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-16
 **Author:** sergio + claude (collaborative session)
-**Status:** Phase 1 + Phase 2 both deployed. Camofox kept hot as warm-rollback target; no longer in the production traffic path.
+**Status:** Phase 1 + 2 + 3 all complete same day. Camofox systemd unit stopped and disabled; Cloak service is the sole stealth + interactive browser backend. Rollback still possible by re-enabling Camofox systemd and flipping `CAMOFOX_URL`.
 
 ## TL;DR
 
@@ -116,10 +116,56 @@ systemctl --user restart hermes-gateway hermes-gateway-arinze hermes-gateway-hr-
 ```
 …or restore from `~/.hermes/.env.pre-cloak-flip`.
 
-### Phase 3 — when ready
-- After ~1 week of clean operation: stop + disable Camofox systemd, leave install in `node_modules/` for any future code reference
-- Mark `tools/browser_camofox.py` as deprecated in its module docstring (don't rename — would break imports in `browser_tool.py`)
-- Optionally move the Cloak service source from the Tower host into this repo under `tower/services/cloak-service/` so it's version-controlled
+## Phase 3 — completed same day (2026-05-16)
+
+Triggered after Phase 2 E2E was green and gateway traffic confirmed
+landing on Cloak. User opted to skip the ~1 week warm-rollback period.
+
+### What landed
+- `systemctl --user stop camofox.service` — Camofox process terminated
+  (0 active tabs / 0 active sessions at the time of stop, no in-flight work)
+- `systemctl --user disable camofox.service` — symlink removed from
+  `default.target.wants`, will NOT restart on Tower reboot
+- Port 9377 released (`ss -tlnp` confirms)
+- `tools/browser_camofox.py` module docstring rewritten as a deprecation
+  notice — explains the file's name is historical, HTTP calls now land
+  on Cloak (`CAMOFOX_URL=http://localhost:9378`), keep filename to avoid
+  renaming the 17 call sites in `browser_tool.py`
+- Camofox install left untouched at
+  `~/.hermes/hermes-agent/node_modules/@askjo/camofox-browser/` — for
+  reference / future code archaeology / rollback if needed
+
+### Post-stop verification (all green)
+- Cloak service still serving: `systemctl --user is-active cloak-service` → `active`
+- All 6 hermes-gateway processes still active
+- Full E2E flow re-run against Cloak with Camofox dead: 9/9 endpoint calls
+  passed (create tab → snapshot → click(e3) → snapshot → navigate(DDG) →
+  back → screenshot → delete-session)
+- Python import of `tools.browser_camofox` symbols (`is_camofox_mode`,
+  `get_camofox_url`, `check_camofox_available`, `camofox_navigate`,
+  `camofox_snapshot`, `camofox_click`, `camofox_type`) — all importable,
+  no exceptions. With `CAMOFOX_URL=http://localhost:9378` in env:
+  `is_camofox_mode()` → True, `check_camofox_available()` → True
+
+### Re-enabling Camofox if a regression appears
+```bash
+systemctl --user enable camofox.service
+systemctl --user start camofox.service
+sed -i 's|^CAMOFOX_URL=http://localhost:9378$|CAMOFOX_URL=http://localhost:9377|' ~/.hermes/.env
+systemctl --user restart hermes-gateway hermes-gateway-arinze hermes-gateway-hr-agent hermes-gateway-krati hermes-gateway-research-agent hermes-gateway-sergio
+```
+Camofox will boot fresh; takes ~3 seconds to be ready.
+
+### Phase 4 (optional, not yet planned)
+- Move Cloak service source from the Tower host into this repo under
+  `tower/services/cloak-service/` so it's version controlled. Trade-off:
+  introduces a deploy step (rsync from repo to `~/.hermes/cloak-service/`,
+  or repoint the systemd unit at the repo path). Defer until either
+  multi-developer collaboration on the service starts, or the source
+  diverges enough that "what's actually running" becomes ambiguous.
+- Remove `node_modules/@askjo/camofox-browser/` from the hermes-agent
+  install — only if disk pressure becomes an issue (currently it's
+  ~140 MB of Firefox binary + JS).
 
 ## Rollback path
 

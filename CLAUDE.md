@@ -43,7 +43,7 @@ Layered multi-agent system: CEO (Claude Opus 4.6 via Paperclip) orchestrates spe
 - **Web search**: Firecrawl (localhost:3002) → SearXNG (localhost:8888) — free, unlimited, aggregates Google+Bing+DDG+Startpage
 - **Web scraping (default)**: Firecrawl (localhost:3002) with Playwright service for JS-rendered pages
 - **Stealth scraping + interactive browser tool**: **Cloak service (localhost:9378)** — CloakBrowser stealth Chromium 146 with C++ fingerprint patches, persistent per-domain cookies, request pacing, CapSolver captcha fallback, **and** the full interactive surface (`/tabs/*` endpoints: snapshot/click/type/scroll/back/screenshot) that `browser_camofox.py` calls. `CAMOFOX_URL` env points at port 9378 since 2026-05-16.
-- **Camofox (deprecated, warm-rollback only)**: still running on port 9377 as a fallback target. Will be stopped + disabled after ~1 week of clean Cloak production operation. See `tower/docs/browser-stealth-benchmark-2026-05-16.md` and `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md` for the rollback procedure.
+- **Camofox (retired 2026-05-16)**: systemd unit stopped + disabled. Source still installed under `~/.hermes/hermes-agent/node_modules/@askjo/camofox-browser/` for reference; not started. The `tools/browser_camofox.py` filename is kept (renaming would touch too many `browser_tool.py` call sites) but its module docstring is now a deprecation notice — it talks to Cloak. See `tower/docs/browser-stealth-benchmark-2026-05-16.md` and `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md` for the rollback procedure if a regression appears.
 - **Token burn rule**: Agents communicate ONLY via MemOS shared state, never agent-to-agent
 
 ## Key Paths

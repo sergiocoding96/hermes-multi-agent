@@ -165,7 +165,7 @@ curl -X POST http://localhost:9378/v1/save-pdf \
 # Returns {"success": true, "path": "/tmp/cloak-pdf-<ts>.pdf", "size_bytes": ...}
 ```
 
-**Camofox status (2026-05-16, post Phase 2):** the Cloak service now exposes the full `/tabs/*` interactive surface (snapshot/click/type/scroll/back/screenshot) and is the active backend for the agent's `browser` skill (via `CAMOFOX_URL` env pointing at port 9378). The Camofox systemd service is still running as a warm-rollback target only; it receives no agent traffic. See `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md` for the cutover and rollback details.
+**Camofox status (2026-05-16, post Phase 3):** Cloak service serves both stealth scraping AND the agent's interactive `browser` skill (via `CAMOFOX_URL` pointing at port 9378). The Camofox systemd unit is **stopped and disabled** — no longer running. The `tools/browser_camofox.py` filename is retained (renaming would touch too many `browser_tool.py` call sites) but its module docstring is now a deprecation notice; HTTP calls land on Cloak. See `memos-setup/learnings/2026-05-16-cloak-deprecate-camofox.md` for the full cutover history and rollback recipe.
 
 ## Decision Tree
 
