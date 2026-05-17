@@ -20,3 +20,6 @@ agents-auth.json.*
 __pycache__/
 *.pyc
 *.pyo
+
+# MCP tool scratch (playwright session logs / page snapshots)
+.playwright-mcp/
