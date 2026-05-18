@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Hermes Memory · UMAP Explorer</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f6fa;
+    --panel: #ffffff;
+    --rule: #e1e5ec;
+    --text: #0f2042;
+    --text-dim: #6b7280;
+    --accent: #ff8c42;
+    --accent-soft: #ffe5cf;
+    --pill: #f1f4f9;
+    --shadow: 0 8px 24px rgba(15, 32, 66, 0.08);
+    /* per-profile colors — colorblind-safer; orange/red intentionally
+       avoided so the accent color (used for cross-agent + UI) doesn't
+       collide with any profile. */
+    --p1: #4c78a8; /* blue   */
+    --p2: #54a24b; /* green  */
+    --p3: #b279a2; /* purple */
+    --p4: #72b7b2; /* teal   */
+    --p5: #cc6699; /* magenta*/
+    --p6: #6b9080; /* sage   */
+    --p7: #8da0cb; /* lavender */
+    --p8: #1f9197; /* deep teal */
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 20px 28px 14px;
+    display: flex; align-items: baseline; gap: 18px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--panel);
+  }
+  header h1 {
+    margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;
+  }
+  header .accent {
+    color: var(--accent); text-transform: uppercase; font-size: 11px;
+    letter-spacing: 0.12em; font-weight: 700;
+  }
+  header .meta {
+    margin-left: auto; color: var(--text-dim); font-size: 12px;
+  }
+  header .meta code { background: var(--pill); padding: 2px 6px; border-radius: 4px; }
+
+  main {
+    display: grid;
+    grid-template-columns: 280px 1fr 380px;
+    gap: 0;
+    min-height: calc(100vh - 60px);
+  }
+  aside.left, aside.right { background: var(--panel); padding: 18px 18px 12px; overflow-y: auto; max-height: calc(100vh - 60px); }
+  aside.left { border-right: 1px solid var(--rule); }
+  aside.right { border-left: 1px solid var(--rule); }
+
+  .legend-box {
+    background: linear-gradient(180deg, #fff7f0 0%, #fff 100%);
+    border: 1px solid var(--accent-soft);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+  .legend-box h3 {
+    margin: 0 0 8px 0; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--accent); display: flex; align-items: center; gap: 6px;
+  }
+  .legend-box ul { margin: 0; padding: 0; list-style: none; }
+  .legend-box li {
+    display: flex; align-items: flex-start; gap: 9px;
+    padding: 5px 0; font-size: 12px; line-height: 1.5; color: var(--text);
+  }
+  .legend-box li .swatch {
+    flex: 0 0 14px; height: 14px; border-radius: 50%;
+    margin-top: 2px; background: var(--p1);
+  }
+  .legend-box li .swatch.cross {
+    background: var(--p1);
+    border: 2.5px solid #fff;
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .legend-box li .swatch.solo { background: var(--p2); border: 1px solid rgba(0,0,0,0.18); }
+  .legend-box li b { color: var(--text); font-weight: 700; }
+  .legend-box li .hint { color: var(--text-dim); }
+  .legend-box details { margin-top: 8px; }
+  .legend-box summary {
+    cursor: pointer; font-size: 11px; color: var(--text-dim);
+    user-select: none;
+  }
+  .legend-box summary:hover { color: var(--accent); }
+  .legend-box .deep {
+    margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--rule);
+    font-size: 11px; color: var(--text-dim); line-height: 1.5;
+  }
+  .legend-box .deep code {
+    background: var(--pill); padding: 1px 5px; border-radius: 3px;
+    font-size: 0.95em;
+  }
+  section.canvas { background: var(--bg); padding: 14px; position: relative; }
+  #plot { width: 100%; height: 100%; min-height: 540px; }
+
+  .group { margin-bottom: 16px; }
+  .group h3 {
+    margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--text-dim);
+  }
+  .filter-mode {
+    display: flex; gap: 4px; background: var(--pill); padding: 3px;
+    border-radius: 7px;
+  }
+  .filter-mode button {
+    flex: 1; padding: 6px 8px; border: 0; background: transparent;
+    color: var(--text-dim); font: inherit; font-size: 12px; font-weight: 600;
+    border-radius: 5px; cursor: pointer;
+  }
+  .filter-mode button.active {
+    background: var(--panel); color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  .profiles { display: flex; flex-direction: column; gap: 4px; }
+  .profiles label {
+    display: flex; align-items: center; gap: 9px;
+    padding: 5px 8px; border-radius: 6px; cursor: pointer;
+    font-size: 13px; font-weight: 500;
+  }
+  .profiles label:hover { background: var(--pill); }
+  .profiles label .sw {
+    width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px;
+  }
+  .profiles label .ct {
+    margin-left: auto; color: var(--text-dim); font-size: 11px;
+    font-feature-settings: "tnum";
+  }
+  .profiles label input { display: none; }
+  .profiles label.off { opacity: 0.45; }
+
+  input[type="search"] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--rule);
+    border-radius: 6px; font: inherit; font-size: 13px;
+    background: var(--panel); color: var(--text);
+  }
+  input[type="search"]:focus {
+    outline: 2px solid var(--accent); border-color: var(--accent);
+  }
+
+  .stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    font-size: 12px;
+  }
+  .stats .stat {
+    background: var(--pill); padding: 7px 9px; border-radius: 6px;
+  }
+  .stats .stat b { display: block; font-size: 17px; font-weight: 700; }
+  .stats .stat span { color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+  .detail-empty {
+    color: var(--text-dim); font-size: 13px; padding: 24px 12px; text-align: center;
+    border: 1px dashed var(--rule); border-radius: 8px;
+  }
+  .detail-card { display: flex; flex-direction: column; gap: 12px; }
+  .detail-card h2 {
+    margin: 0; font-size: 14px; font-weight: 700;
+    word-break: break-all;
+  }
+  .detail-card .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+  .detail-card .badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; padding: 3px 7px; border-radius: 12px;
+    background: var(--pill); color: var(--text-dim);
+  }
+  .detail-card .badge.profile { color: white; }
+  .detail-card .badge.cross { background: var(--accent-soft); color: var(--accent); }
+  .detail-card .summary {
+    font-size: 13px; line-height: 1.55; color: var(--text);
+    background: var(--pill); padding: 10px 12px; border-radius: 8px;
+    border-left: 3px solid var(--accent);
+  }
+  .detail-card dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; font-size: 12px; }
+  .detail-card dt { color: var(--text-dim); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; }
+  .detail-card dd { margin: 0; color: var(--text); font-feature-settings: "tnum"; }
+
+  .legend-note {
+    font-size: 11px; color: var(--text-dim); line-height: 1.45; margin-top: 8px;
+  }
+  .accent-dot { color: var(--accent); }
+  code { background: var(--pill); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="accent">Hermes · Memory Explorer</div>
+    <h1>UMAP projection of trace vectors</h1>
+  </div>
+  <div class="meta">
+    <span id="meta-points">…</span> · <span id="meta-model">…</span>
+  </div>
+</header>
+
+<main>
+  <aside class="left">
+    <div class="legend-box">
+      <h3>How to read this map ✨</h3>
+      <ul>
+        <li>
+          <span class="swatch solo"></span>
+          <div>
+            <b>Each dot is one memory.</b>
+            <span class="hint"> Dots near each other are about similar things.</span>
+          </div>
+        </li>
+        <li>
+          <span class="swatch" style="background: var(--p1)"></span>
+          <div>
+            <b>Colour = which agent had the memory.</b>
+            <span class="hint"> Toggle agents on/off in the Profiles list below.</span>
+          </div>
+        </li>
+        <li>
+          <span class="swatch cross"></span>
+          <div>
+            <b>White-ringed dots = "shared topic".</b>
+            <span class="hint"> Multiple agents have memories about this — good candidates to make into shared knowledge (skills / world&nbsp;model).</span>
+          </div>
+        </li>
+      </ul>
+      <details>
+        <summary>What's under the hood</summary>
+        <div class="deep">
+          Trace summaries are embedded with <code>BGE-large-en-v1.5</code> (1024-dim).
+          UMAP projects them to 2D while keeping local structure: vectors close
+          in 1024D stay close in 2D. HDBSCAN groups them into clusters; if a
+          cluster touches ≥2 different profiles it's flagged "shared topic".
+        </div>
+      </details>
+    </div>
+
+    <div class="group">
+      <h3>Search summaries</h3>
+      <input id="q" type="search" placeholder="filter by text…" />
+    </div>
+
+    <div class="group">
+      <h3>Filter mode</h3>
+      <div class="filter-mode" role="tablist" aria-label="Filter mode">
+        <button id="mode-all" class="active">All</button>
+        <button id="mode-cross">Shared only</button>
+        <button id="mode-solo">Solo only</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>Profiles</h3>
+      <div class="profiles" id="profiles"></div>
+    </div>
+
+    <div class="group">
+      <h3>Stats</h3>
+      <div class="stats">
+        <div class="stat"><b id="stat-visible">—</b><span>visible</span></div>
+        <div class="stat"><b id="stat-cross">—</b><span>cross-agent</span></div>
+        <div class="stat"><b id="stat-clusters">—</b><span>clusters</span></div>
+        <div class="stat"><b id="stat-profiles">—</b><span>profiles</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <section class="canvas">
+    <div id="plot"></div>
+  </section>
+
+  <aside class="right">
+    <div class="group">
+      <h3>Selection</h3>
+      <div id="detail" class="detail-empty">
+        Hover a point to peek; click to pin its summary here.
+      </div>
+    </div>
+
+  </aside>
+</main>
+
+<script>
+const PALETTE = [
+  getComputedStyle(document.documentElement).getPropertyValue('--p1').trim(),
+  getComputedStyle(document.documentElement).getPropertyValue('--p2').trim(),
+  getComputedStyle(document.documentElement).getPropertyValue('--p3').trim(),
+  getComputedStyle(document.documentElement).getPropertyValue('--p4').trim(),
+  getComputedStyle(document.documentElement).getPropertyValue('--p5').trim(),
+  getComputedStyle(document.documentElement).getPropertyValue('--p6').trim(),
+  getComputedStyle(document.documentElement).getPropertyValue('--p7').trim(),
+  getComputedStyle(document.documentElement).getPropertyValue('--p8').trim(),
+];
+
+let DATA = null;
+let COLORS = {};
+let activeProfiles = new Set();
+let filterMode = "all";
+let textQuery = "";
+
+async function loadData() {
+  // Allow ?src=... override; default to sibling file.
+  const params = new URLSearchParams(location.search);
+  const src = params.get("src") || "vec-map.json";
+  const r = await fetch(src + "?v=" + Date.now());
+  if (!r.ok) throw new Error("failed to load " + src + ": " + r.status);
+  DATA = await r.json();
+  document.getElementById("meta-points").textContent = `${DATA.points.length} traces`;
+  document.getElementById("meta-model").textContent =
+    `${DATA.model || "BGE-large"} · UMAP(n=${DATA.umap?.n_neighbors ?? "?"}, min_dist=${DATA.umap?.min_dist ?? "?"})`;
+  DATA.profiles.forEach((p, i) => { COLORS[p] = PALETTE[i % PALETTE.length]; });
+  activeProfiles = new Set(DATA.profiles);
+  buildProfilesUI();
+  render();
+}
+
+function buildProfilesUI() {
+  const host = document.getElementById("profiles");
+  host.innerHTML = "";
+  const counts = {};
+  for (const p of DATA.points) counts[p.profile] = (counts[p.profile] || 0) + 1;
+  DATA.profiles.forEach((p) => {
+    const lab = document.createElement("label");
+    lab.dataset.profile = p;
+    lab.innerHTML = `
+      <span class="sw" style="background:${COLORS[p]}"></span>
+      <span>${escapeHtml(p)}</span>
+      <span class="ct">${counts[p] || 0}</span>
+      <input type="checkbox" checked />
+    `;
+    const cb = lab.querySelector("input");
+    cb.addEventListener("change", () => {
+      if (cb.checked) activeProfiles.add(p);
+      else activeProfiles.delete(p);
+      lab.classList.toggle("off", !cb.checked);
+      render();
+    });
+    host.appendChild(lab);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function pointsForRender() {
+  return DATA.points.filter(p => {
+    if (!activeProfiles.has(p.profile)) return false;
+    if (filterMode === "cross" && !p.crossAgent) return false;
+    if (filterMode === "solo" && p.crossAgent) return false;
+    if (textQuery && !(p.summary || "").toLowerCase().includes(textQuery)) return false;
+    return true;
+  });
+}
+
+function render() {
+  const filtered = pointsForRender();
+  // One trace per profile so the legend toggles work.
+  const byProfile = new Map();
+  for (const p of filtered) {
+    if (!byProfile.has(p.profile)) byProfile.set(p.profile, []);
+    byProfile.get(p.profile).push(p);
+  }
+  const traces = [];
+  for (const [profile, pts] of byProfile) {
+    traces.push({
+      type: "scattergl",
+      mode: "markers",
+      name: profile,
+      x: pts.map(p => p.x),
+      y: pts.map(p => p.y),
+      customdata: pts,  // for hover/click access
+      marker: {
+        color: COLORS[profile],
+        // Cross-agent points are slightly larger AND wear a thick white
+        // outline. Solo-agent points are small and have a barely-visible
+        // outline. Orange (the UI accent) is reserved for "this is a
+        // cross-agent cluster" badges and chips — never used as a
+        // profile color.
+        size: pts.map(p => p.crossAgent ? 11 : 7),
+        opacity: 0.92,
+        line: {
+          color: pts.map(p => p.crossAgent ? "#ffffff" : "rgba(0,0,0,0.18)"),
+          width: pts.map(p => p.crossAgent ? 2.2 : 0.4),
+        },
+      },
+      hovertemplate:
+        "<b>%{customdata.profile}</b>" +
+        "<br>%{customdata.summary}" +
+        "<br><i>%{customdata.crossAgent}</i>" +
+        "<extra></extra>",
+    });
+  }
+
+  Plotly.react("plot", traces, {
+    margin: { l: 30, r: 18, t: 14, b: 30 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "#ffffff",
+    xaxis: {
+      gridcolor: "#e1e5ec", zerolinecolor: "#e1e5ec",
+      showspikes: false, title: { text: "UMAP-1", font: { size: 11, color: "#6b7280" } },
+    },
+    yaxis: {
+      gridcolor: "#e1e5ec", zerolinecolor: "#e1e5ec",
+      showspikes: false, title: { text: "UMAP-2", font: { size: 11, color: "#6b7280" } },
+    },
+    legend: {
+      orientation: "h", x: 0, y: 1.08, font: { size: 11 },
+    },
+    hoverlabel: {
+      bgcolor: "#0f2042", bordercolor: "#ff8c42",
+      font: { color: "white", size: 12, family: "system-ui, sans-serif" },
+      align: "left",
+    },
+    dragmode: "pan",
+  }, {
+    responsive: true,
+    displaylogo: false,
+    modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d"],
+    scrollZoom: true,
+  });
+
+  // Update stats
+  document.getElementById("stat-visible").textContent = filtered.length;
+  document.getElementById("stat-cross").textContent =
+    filtered.filter(p => p.crossAgent).length;
+  document.getElementById("stat-clusters").textContent =
+    new Set(filtered.filter(p => p.cluster >= 0).map(p => p.cluster)).size;
+  document.getElementById("stat-profiles").textContent =
+    new Set(filtered.map(p => p.profile)).size;
+}
+
+function showDetail(point) {
+  const profile = point.profile || "—";
+  const html = `
+    <div class="detail-card">
+      <div class="badges">
+        <span class="badge profile" style="background:${COLORS[profile]}">${escapeHtml(profile)}</span>
+        ${point.crossAgent ? '<span class="badge cross">shared topic</span>' : ""}
+        <span class="badge">${escapeHtml(point.scope || "?")}</span>
+      </div>
+      <h2>${escapeHtml(point.id)}</h2>
+      <div class="summary">${escapeHtml(point.summary || "(no summary)")}</div>
+      <dl>
+        <dt>Cluster</dt><dd>${point.cluster >= 0 ? "#" + point.cluster : "—"}</dd>
+        <dt>UMAP</dt><dd>(${point.x.toFixed(2)}, ${point.y.toFixed(2)})</dd>
+        <dt>Captured</dt><dd>${point.ts ? new Date(point.ts).toLocaleString() : "—"}</dd>
+        <dt>Scope</dt><dd>${escapeHtml(point.scope || "—")}</dd>
+      </dl>
+    </div>
+  `;
+  document.getElementById("detail").outerHTML = '<div id="detail">' + html + '</div>';
+}
+
+// Plotly events
+function wirePlotly() {
+  const plotEl = document.getElementById("plot");
+  plotEl.on("plotly_hover", (ev) => {
+    const pt = ev.points && ev.points[0];
+    if (pt && pt.customdata) showDetail(pt.customdata);
+  });
+  plotEl.on("plotly_click", (ev) => {
+    const pt = ev.points && ev.points[0];
+    if (pt && pt.customdata) showDetail(pt.customdata);
+  });
+}
+
+// Filter mode buttons
+["all", "cross", "solo"].forEach((m) => {
+  document.getElementById(`mode-${m}`).addEventListener("click", () => {
+    filterMode = m;
+    document.querySelectorAll(".filter-mode button").forEach(b => b.classList.remove("active"));
+    document.getElementById(`mode-${m}`).classList.add("active");
+    render();
+  });
+});
+
+// Search input
+document.getElementById("q").addEventListener("input", (e) => {
+  textQuery = e.target.value.trim().toLowerCase();
+  render();
+});
+
+loadData().then(() => {
+  // Wire events after first render so plotEl.on exists
+  setTimeout(wirePlotly, 100);
+}).catch(err => {
+  document.getElementById("plot").innerHTML =
+    '<p style="padding:30px;color:#b91c1c">' + escapeHtml(err.message) + '</p>';
+});
+</script>
+</body>
+</html>

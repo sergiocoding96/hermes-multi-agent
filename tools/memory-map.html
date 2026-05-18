@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Hermes · Memory Viewer</title>
+<script src="d3.v7.min.js"></script>
+<style>
+  :root {
+    --bg:        #fafbfc;
+    --bg-card:   #ffffff;
+    --bg-soft:   #f3f4f6;
+    --border:    #e5e7eb;
+    --border-strong: #d1d5db;
+    --text:      #1f2937;
+    --text-dim:  #6b7280;
+    --text-mid:  #4b5563;
+    --accent:    #f97316;
+
+    /* node palette (pastel fills, vivid strokes) */
+    --skill-fill: #fbcfe8;   --skill-stroke: #db2777;
+    --policy-fill: #cffafe;  --policy-stroke: #0891b2;
+    --cluster-fill: #ede9fe; --cluster-stroke: #7c3aed;
+    --world-fill: #fef3c7;   --world-stroke: #d97706;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  #canvas { position: absolute; inset: 0; }
+  svg { display: block; cursor: grab; }
+  svg:active { cursor: grabbing; }
+
+  /* ────────────────────────────── Header ────────────────────────────── */
+  header {
+    position: absolute; top: 14px; left: 14px; right: 326px; z-index: 12;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+  }
+  .titlebar {
+    display: flex; align-items: baseline; gap: 14px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 16px;
+    pointer-events: auto;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  }
+  .titlebar .brand {
+    color: var(--accent); text-transform: uppercase;
+    font-size: 10px; letter-spacing: 0.18em; font-weight: 700;
+  }
+  .titlebar h1 {
+    margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.005em;
+    color: var(--text);
+  }
+  .titlebar .meta {
+    margin-left: auto; color: var(--text-dim); font-size: 11px;
+    font-feature-settings: "tnum";
+  }
+
+  /* Agent row */
+  .agentbar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 7px 12px;
+    pointer-events: auto;
+  }
+  .agentbar .label {
+    color: var(--text-dim); font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.14em; font-weight: 700; margin-right: 2px;
+  }
+  .agentbar .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--bg-soft); border: 1px solid var(--border);
+    color: var(--text-mid);
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: background 120ms, border-color 120ms, color 120ms;
+    user-select: none;
+  }
+  .agentbar .pill:hover { background: #e5e7eb; color: var(--text); }
+  .agentbar .pill .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+  }
+  .agentbar .pill svg { display: block; flex: 0 0 14px; }
+  .legend-box li svg { flex: 0 0 14px; }
+  .agentbar .pill.active {
+    background: #fed7aa; border-color: var(--accent); color: #9a3412;
+  }
+  .agentbar .pill.all.active {
+    background: var(--text); border-color: var(--text); color: #ffffff;
+  }
+
+  /* Right panel */
+  aside.controls {
+    position: absolute; top: 14px; right: 14px; bottom: 14px;
+    width: 298px; z-index: 11;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  }
+  aside.controls h3 {
+    margin: 0 0 8px 0; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-dim);
+  }
+  aside.controls .helptext {
+    font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-top: 6px;
+  }
+
+  .legend-box {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 11px 12px;
+  }
+  .legend-box ul { margin: 0; padding: 0; list-style: none;
+    display: flex; flex-direction: column; gap: 7px; }
+  .legend-box li {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 11.5px; line-height: 1.45;
+  }
+  .legend-box li b { color: var(--text); font-weight: 600; }
+  .legend-box li .hint { color: var(--text-dim); }
+  .legend-box .gly {
+    flex: 0 0 14px; height: 14px; border-radius: 50%;
+    border: 2px solid;
+  }
+  .gly.skill   { background: var(--skill-fill);   border-color: var(--skill-stroke); }
+  .gly.policy  { background: var(--policy-fill);  border-color: var(--policy-stroke); }
+  .gly.cluster { background: var(--cluster-fill); border-color: var(--cluster-stroke); }
+  .gly.world   { background: var(--world-fill);   border-color: var(--world-stroke); }
+
+  input[type="search"] {
+    width: 100%; padding: 7px 10px;
+    border: 1px solid var(--border); border-radius: 6px;
+    font: inherit; font-size: 12.5px;
+    background: var(--bg); color: var(--text);
+  }
+  input[type="search"]:focus { outline: 2px solid var(--accent); }
+
+  .toggles { display: flex; flex-direction: column; gap: 6px; }
+  .toggles label {
+    display: flex; align-items: center; gap: 9px;
+    padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  }
+  .toggles label:hover { background: var(--bg-soft); }
+  .toggles .ct {
+    margin-left: auto; color: var(--text-dim);
+    font-feature-settings: "tnum"; font-size: 11px;
+  }
+  .toggles label.off { opacity: 0.4; }
+  .toggles label input { display: none; }
+
+  .seg {
+    display: flex; gap: 2px; background: var(--bg-soft); padding: 2px;
+    border-radius: 6px; border: 1px solid var(--border);
+  }
+  .seg button {
+    flex: 1; padding: 5px 4px; border: 0; background: transparent;
+    color: var(--text-dim); font: 600 11px/1.2 inherit; cursor: pointer;
+    border-radius: 4px;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.active { background: var(--accent); color: #ffffff; }
+
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stats .stat {
+    background: var(--bg-soft); padding: 8px 10px; border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+  .stats .stat b {
+    display: block; font-size: 17px; font-weight: 700;
+    font-feature-settings: "tnum"; color: var(--text);
+  }
+  .stats .stat span {
+    color: var(--text-dim); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em;
+  }
+
+  /* Detail panel */
+  .detail {
+    position: absolute; bottom: 14px; left: 14px;
+    width: min(420px, 38vw); max-height: 38vh; z-index: 11;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 13px 15px;
+    overflow-y: auto;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  }
+  .detail.empty { opacity: 0.6; }
+  .detail .badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+  .detail .badge {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; padding: 3px 8px; border-radius: 10px;
+    background: var(--bg-soft); color: var(--text-mid);
+    border: 1px solid var(--border);
+  }
+  .detail .badge.kind-skill   { background: var(--skill-fill);   color: #831843; border-color: var(--skill-stroke); }
+  .detail .badge.kind-policy  { background: var(--policy-fill);  color: #164e63; border-color: var(--policy-stroke); }
+  .detail .badge.kind-cluster { background: var(--cluster-fill); color: #4c1d95; border-color: var(--cluster-stroke); }
+  .detail .badge.kind-world   { background: var(--world-fill);   color: #78350f; border-color: var(--world-stroke); }
+  .detail .badge.cross { background: var(--accent); color: #ffffff; border-color: var(--accent); }
+  .detail h2 {
+    margin: 0 0 6px 0; font-size: 10px; font-weight: 600;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    color: var(--text-dim); word-break: break-all;
+  }
+  .detail .name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .detail .text { font-size: 13px; line-height: 1.55; color: var(--text-mid); }
+  .detail .lineage {
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-dim);
+  }
+  .detail .lineage b { color: var(--accent); }
+
+  /* Tooltip */
+  #tip {
+    position: absolute; pointer-events: none; z-index: 25;
+    background: var(--text); color: #ffffff;
+    padding: 6px 10px; border-radius: 6px;
+    font-size: 11.5px; line-height: 1.4; max-width: 280px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transform: translate(10px, 10px);
+    display: none;
+  }
+  #tip b { color: #fed7aa; }
+  #tip .kind {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: #d1d5db; font-weight: 700; margin-right: 6px;
+  }
+
+  /* Node visuals */
+  .node circle { transition: stroke-width 120ms, opacity 120ms; }
+  .node text {
+    font: 600 10.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    fill: var(--text);
+    pointer-events: none;
+    text-anchor: middle;
+    dominant-baseline: middle;
+  }
+  /* Stroke colour is set inline per-agent on each <circle>. Fill is kind-based. */
+  .node .shape { transition: stroke-width 120ms, opacity 120ms; stroke-width: 2.5; }
+  .node.kind-skill   .shape { fill: var(--skill-fill);   }
+  .node.kind-policy  .shape { fill: var(--policy-fill);  }
+  .node.kind-cluster .shape { fill: var(--cluster-fill); stroke-width: 2.0; }
+  .node.kind-world   .shape { fill: var(--world-fill);   }
+  .node.cross .shape { filter: drop-shadow(0 0 6px rgba(249, 115, 22, 0.30)); }
+  .node.dim .shape, .node.dim text { opacity: 0.18; }
+  .node.pinned .shape { stroke-width: 5; }
+  .node:hover .shape { stroke-width: 4; }
+
+  .link { stroke: var(--border-strong); stroke-width: 1.0; fill: none; }
+  .link.highlight { stroke: var(--accent); stroke-width: 2.0; }
+  .link.dim { opacity: 0.10; }
+  .link-label {
+    font: 500 9px -apple-system, system-ui, sans-serif;
+    fill: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+  .link.highlight + .link-label { opacity: 1; }
+
+  .hint {
+    position: absolute; bottom: 14px; right: 14px; z-index: 10;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 7px; padding: 6px 10px;
+    font-size: 10px; color: var(--text-dim);
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas"><svg></svg></div>
+
+<header>
+  <div class="titlebar">
+    <div>
+      <div class="brand">Hermes · Memory Viewer</div>
+      <h1>Skills · Policies · Topics</h1>
+    </div>
+    <div class="meta" id="meta">…</div>
+  </div>
+  <div class="agentbar" id="agentbar">
+    <span class="label">View as</span>
+  </div>
+</header>
+
+<aside class="controls">
+  <div class="legend-box">
+    <h3 style="margin: 0 0 8px 0; color: var(--text-mid);">Color = kind</h3>
+    <ul>
+      <li><span class="gly skill"></span>   <div><b>Skill</b> <span class="hint">— callable procedure (L3).</span></div></li>
+      <li><span class="gly policy"></span>  <div><b>Policy</b> <span class="hint">— induced pattern (L2).</span></div></li>
+      <li><span class="gly cluster"></span> <div><b>Topic</b> <span class="hint">— DeepSeek-labelled cluster.</span></div></li>
+      <li><span class="gly world"></span>   <div><b>World fact</b> <span class="hint">— stable environment fact.</span></div></li>
+    </ul>
+  </div>
+
+  <div class="legend-box">
+    <h3 style="margin: 0 0 8px 0; color: var(--text-mid);">Border = owning agent</h3>
+    <ul id="agent-legend">
+      <!-- populated at runtime -->
+    </ul>
+    <div class="helptext" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">
+      Topic hubs have a neutral grey border — they aggregate traces from multiple agents.
+    </div>
+  </div>
+
+  <div>
+    <h3>Search</h3>
+    <input id="q" type="search" placeholder="filter by name or topic…" />
+  </div>
+
+  <div>
+    <h3>Show</h3>
+    <div class="toggles" id="toggles"></div>
+  </div>
+
+  <div>
+    <h3>Layout</h3>
+    <div class="seg" id="seg-layout">
+      <button class="active" data-act="settle">Re-settle</button>
+      <button data-act="reset">Reset view</button>
+    </div>
+    <div class="helptext">
+      Drag any node to reposition. Click to pin and highlight its 1-hop neighbours.
+    </div>
+  </div>
+
+  <div>
+    <h3>Stats</h3>
+    <div class="stats">
+      <div class="stat"><b id="stat-nodes">—</b><span>visible</span></div>
+      <div class="stat"><b id="stat-edges">—</b><span>edges</span></div>
+      <div class="stat"><b id="stat-shared">—</b><span>shared topics</span></div>
+      <div class="stat"><b id="stat-profile">—</b><span>focused on</span></div>
+    </div>
+  </div>
+</aside>
+
+<div id="detail" class="detail empty">
+  <div class="badges"><span class="badge">no selection</span></div>
+  <div class="text">Click any circle to see its detail and its 1-hop neighbours.</div>
+</div>
+
+<div id="tip"></div>
+<div class="hint">D3 force layout · skills ↔ policies ↔ topics</div>
+
+<script>
+const PALETTE = ["#0891b2", "#16a34a", "#a855f7", "#0d9488", "#db2777", "#65a30d", "#6366f1", "#0284c7"];
+
+// Border colour encodes the OWNING AGENT. Fill colour still encodes the node
+// kind. All-circles, keeping the all-circle aesthetic from the inspiration.
+// Cluster topics get a neutral grey border since they aggregate multiple agents.
+const CLUSTER_BORDER = "#9ca3af";  // neutral grey
+// Build a small SVG dot for the legend (filled circle with the agent's colour).
+function legendDotSVG(color, size = 12) {
+  const r = (size - 2) / 2;
+  return `<svg width="${size}" height="${size}" viewBox="-${size/2} -${size/2} ${size} ${size}">
+    <circle r="${r}" fill="${color}" />
+  </svg>`;
+}
+
+let DATA = null;
+let RAW = null;
+let activeProfile = "__ALL__";
+let kindEnabled = { skill: true, policy: true, cluster: true, world: true };
+let textQuery = "";
+let pinnedId = null;
+let simulation = null;
+let svgSel = null, gRoot = null;
+let nodeSel = null, linkSel = null, linkLabelSel = null;
+let zoomBehavior = null;
+let NODES_RAW = [], LINKS_RAW = [];
+let COLORS = {};
+
+function shortenLabel(s, maxChars) {
+  if (!s) return "";
+  s = String(s).replace(/_/g, " ");
+  if (s.length <= maxChars) return s;
+  return s.slice(0, maxChars - 1) + "…";
+}
+
+function radiusFor(n) {
+  if (n.kind === "cluster") return 16 + Math.min(12, Math.log2((n.size || 1) + 1));
+  if (n.kind === "skill")   return 16;
+  if (n.kind === "policy")  return 11;
+  if (n.kind === "world")   return 12;
+  return 10;
+}
+
+function labelFor(n) {
+  if (n.kind === "cluster") return shortenLabel(n.label, 22);
+  if (n.kind === "skill")   return shortenLabel(n.name || n.id, 14);
+  if (n.kind === "policy")  return n.name ? shortenLabel(n.name, 10) : "";
+  if (n.kind === "world")   return shortenLabel(n.name || n.id, 12);
+  return "";
+}
+
+function buildGraph() {
+  // ── Build nodes ────────────────────────────────────────────────────────
+  const nodes = [];
+  const wantSkill   = kindEnabled.skill;
+  const wantPolicy  = kindEnabled.policy;
+  const wantCluster = kindEnabled.cluster;
+  const wantWorld   = kindEnabled.world;
+
+  // Cluster hubs from DATA.clusters (only those with labels)
+  if (wantCluster && DATA.clusters) {
+    for (const c of Object.values(DATA.clusters)) {
+      if (!c.label) continue;
+      if (c.size < 4) continue;
+      nodes.push({
+        id: `cluster:${c.id}`,
+        kind: "cluster",
+        label: c.label,
+        size: c.size,
+        profiles: c.profiles || [],
+        crossAgent: c.crossAgent,
+      });
+    }
+  }
+
+  // Skills / Policies / World from DATA.nodes
+  const filterAgent = (p) => activeProfile === "__ALL__" || p === activeProfile;
+  for (const n of DATA.nodes) {
+    if (n.kind === "trace") continue;
+    if (n.kind === "skill" && !wantSkill) continue;
+    if (n.kind === "policy" && !wantPolicy) continue;
+    if (n.kind === "world" && !wantWorld) continue;
+    if (!filterAgent(n.profile)) continue;
+    if (textQuery) {
+      const hay = `${n.extra?.name || ""} ${n.text || ""}`.toLowerCase();
+      if (!hay.includes(textQuery)) continue;
+    }
+    nodes.push({
+      id: n.id,
+      kind: n.kind,
+      name: n.extra?.name || "",
+      profile: n.profile,
+      scope: n.scope,
+      text: n.text || "",
+      extra: n.extra || {},
+      crossAgent: n.crossAgent,
+    });
+  }
+
+  const nodeIds = new Set(nodes.map(n => n.id));
+
+  // ── Build edges ─────────────────────────────────────────────────────────
+  const links = [];
+
+  // Direct lineage edges from data (skill→policy, skill→world, world→policy)
+  for (const e of DATA.edges) {
+    if (e.kind === "policy_trace") continue;       // we don't render trace nodes
+    if (!nodeIds.has(e.from) || !nodeIds.has(e.to)) continue;
+    let relLabel = "USES";
+    if (e.kind === "skill_world")  relLabel = "READS";
+    if (e.kind === "world_policy") relLabel = "FACT FROM";
+    links.push({ source: e.from, target: e.to, kind: e.kind, label: relLabel });
+  }
+
+  // policy → cluster edges (derived: majority vote over policy.extra.src_traces)
+  if (wantCluster && wantPolicy && DATA.clusters) {
+    const traceCluster = new Map();
+    for (const n of DATA.nodes) {
+      if (n.kind === "trace" && n.cluster != null && n.cluster >= 0) {
+        traceCluster.set(n.id, n.cluster);
+      }
+    }
+    for (const n of nodes) {
+      if (n.kind !== "policy") continue;
+      const counts = {};
+      for (const tid of (n.extra.src_traces || [])) {
+        const c = traceCluster.get(tid);
+        if (c != null) counts[c] = (counts[c] || 0) + 1;
+      }
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      if (!top) continue;
+      const cid = `cluster:${top[0]}`;
+      if (!nodeIds.has(cid)) continue;
+      links.push({ source: n.id, target: cid, kind: "policy_cluster", label: "FROM" });
+    }
+  }
+
+  // Hide unconnected nodes other than skills + cluster hubs (they tell the
+  // architecture story even without links). Removes orphan policies/world.
+  const connected = new Set();
+  for (const l of links) { connected.add(l.source); connected.add(l.target); }
+  const filtered = nodes.filter(n =>
+    n.kind === "skill" || n.kind === "cluster" || connected.has(n.id)
+  );
+  const finalIds = new Set(filtered.map(n => n.id));
+  const finalLinks = links.filter(l => finalIds.has(l.source) && finalIds.has(l.target));
+
+  return { nodes: filtered, links: finalLinks };
+}
+
+function render() {
+  const g = buildGraph();
+  NODES_RAW = g.nodes;
+  LINKS_RAW = g.links;
+
+  // Stats
+  document.getElementById("stat-nodes").textContent = NODES_RAW.length;
+  document.getElementById("stat-edges").textContent = LINKS_RAW.length;
+  document.getElementById("stat-shared").textContent =
+    NODES_RAW.filter(n => n.kind === "cluster" && n.crossAgent).length;
+  document.getElementById("stat-profile").textContent =
+    activeProfile === "__ALL__" ? "all" : activeProfile;
+
+  // Joining the data — D3 force expects source/target as objects after init
+  const linkSource = LINKS_RAW.map(l => ({ ...l }));
+
+  // Stop any running simulation
+  if (simulation) simulation.stop();
+
+  simulation = d3.forceSimulation(NODES_RAW)
+    .force("link", d3.forceLink(linkSource)
+      .id(d => d.id)
+      .distance(d => d.kind === "policy_cluster" ? 70 : 110)
+      .strength(0.45))
+    .force("charge", d3.forceManyBody().strength(-260))
+    .force("collide", d3.forceCollide().radius(d => radiusFor(d) + 6).iterations(2))
+    .force("center", d3.forceCenter(0, 0))
+    .force("x", d3.forceX(0).strength(0.04))
+    .force("y", d3.forceY(0).strength(0.04))
+    .alpha(1).alphaDecay(0.03);
+
+  const linkData = linkSource;
+
+  // Links
+  linkSel = gRoot.select("g.links").selectAll("line")
+    .data(linkData, d => `${typeof d.source === "object" ? d.source.id : d.source}|${typeof d.target === "object" ? d.target.id : d.target}|${d.kind}`);
+  linkSel.exit().remove();
+  linkSel = linkSel.enter().append("line")
+    .attr("class", "link")
+    .merge(linkSel);
+
+  // Link labels (only rendered on highlight)
+  linkLabelSel = gRoot.select("g.link-labels").selectAll("text")
+    .data(linkData, d => `${typeof d.source === "object" ? d.source.id : d.source}|${typeof d.target === "object" ? d.target.id : d.target}|${d.kind}`);
+  linkLabelSel.exit().remove();
+  linkLabelSel = linkLabelSel.enter().append("text")
+    .attr("class", "link-label")
+    .text(d => d.label)
+    .merge(linkLabelSel);
+
+  // Nodes
+  nodeSel = gRoot.select("g.nodes").selectAll("g.node")
+    .data(NODES_RAW, d => d.id);
+  nodeSel.exit().remove();
+  const nodeEnter = nodeSel.enter().append("g")
+    .attr("class", d => `node kind-${d.kind}` + (d.crossAgent ? " cross" : ""))
+    .call(d3.drag()
+      .on("start", (ev, d) => {
+        if (!ev.active) simulation.alphaTarget(0.25).restart();
+        d.fx = d.x; d.fy = d.y;
+      })
+      .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+      .on("end", (ev, d) => {
+        if (!ev.active) simulation.alphaTarget(0);
+        // keep node pinned at its dropped position
+      }))
+    .on("click", (ev, d) => {
+      ev.stopPropagation();
+      pinnedId = (pinnedId === d.id) ? null : d.id;
+      applyHighlight();
+      showDetail(d);
+    })
+    .on("mouseover", (ev, d) => {
+      const tip = document.getElementById("tip");
+      tip.style.display = "block";
+      tip.style.left = ev.pageX + "px";
+      tip.style.top  = ev.pageY + "px";
+      const subtitle = d.kind === "cluster"
+        ? `${d.size} traces · ${(d.profiles || []).join(", ") || "?"}`
+        : d.profile;
+      const main = d.kind === "cluster" ? d.label : (d.name || d.id);
+      tip.innerHTML =
+        `<span class="kind">${d.kind}</span><b>${escapeHtml(main)}</b><br/>` +
+        `<span style="color:#9ca3af;font-size:10.5px">${escapeHtml(subtitle)}</span>`;
+    })
+    .on("mouseout", () => { document.getElementById("tip").style.display = "none"; });
+
+  nodeEnter.append("circle")
+    .attr("class", "shape")
+    .attr("r", d => radiusFor(d))
+    .attr("stroke", d => {
+      if (d.kind === "cluster") return CLUSTER_BORDER;
+      return COLORS[d.profile] || CLUSTER_BORDER;
+    });
+  nodeEnter.append("text")
+    .attr("y", d => (d.kind === "policy") ? radiusFor(d) + 11 : 0)
+    .text(d => labelFor(d))
+    .each(function(d) {
+      if (d.kind === "policy") d3.select(this).attr("fill", "var(--text-dim)").attr("font-size", "9.5px");
+    });
+
+  nodeSel = nodeEnter.merge(nodeSel);
+
+  // Tick
+  simulation.on("tick", () => {
+    linkSel
+      .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+    linkLabelSel
+      .attr("x", d => (d.source.x + d.target.x) / 2)
+      .attr("y", d => (d.source.y + d.target.y) / 2 - 3);
+    nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
+  });
+
+  applyHighlight();
+}
+
+function applyHighlight() {
+  if (!pinnedId) {
+    nodeSel.classed("dim", false).classed("pinned", false);
+    linkSel.classed("highlight", false).classed("dim", false);
+    linkLabelSel.style("opacity", 0);
+    return;
+  }
+  const neighbours = new Set([pinnedId]);
+  LINKS_RAW.forEach(l => {
+    const s = typeof l.source === "object" ? l.source.id : l.source;
+    const t = typeof l.target === "object" ? l.target.id : l.target;
+    if (s === pinnedId) neighbours.add(t);
+    if (t === pinnedId) neighbours.add(s);
+  });
+  nodeSel
+    .classed("pinned", d => d.id === pinnedId)
+    .classed("dim", d => !neighbours.has(d.id));
+  linkSel
+    .classed("highlight", d => {
+      const s = typeof d.source === "object" ? d.source.id : d.source;
+      const t = typeof d.target === "object" ? d.target.id : d.target;
+      return s === pinnedId || t === pinnedId;
+    })
+    .classed("dim", d => {
+      const s = typeof d.source === "object" ? d.source.id : d.source;
+      const t = typeof d.target === "object" ? d.target.id : d.target;
+      return s !== pinnedId && t !== pinnedId;
+    });
+  linkLabelSel.style("opacity", d => {
+    const s = typeof d.source === "object" ? d.source.id : d.source;
+    const t = typeof d.target === "object" ? d.target.id : d.target;
+    return (s === pinnedId || t === pinnedId) ? 1 : 0;
+  });
+}
+
+function showDetail(n) {
+  const el = document.getElementById("detail");
+  el.classList.remove("empty");
+  if (n.kind === "cluster") {
+    el.innerHTML = `
+      <div class="badges">
+        <span class="badge kind-cluster">Topic · L1 cluster</span>
+        ${n.crossAgent ? '<span class="badge cross">shared</span>' : ""}
+        ${(n.profiles || []).map(p => `<span class="badge">${escapeHtml(p)}</span>`).join("")}
+      </div>
+      <div class="name">${escapeHtml(n.label)}</div>
+      <div class="text">${n.size} traces across ${(n.profiles || []).length} agent${(n.profiles || []).length === 1 ? "" : "s"}.</div>
+      <div class="lineage">↘ Cluster topic labelled by DeepSeek from member traces.</div>
+    `;
+    return;
+  }
+  const kindBadge = `kind-${n.kind}`;
+  const KIND_LABEL = { skill: "Skill · L3", policy: "Policy · L2", world: "World · L3" };
+  let lineageRow = "";
+  if (n.kind === "skill") {
+    const polCt = (n.extra?.src_policies || []).length;
+    const wmCt  = (n.extra?.src_world || []).length;
+    lineageRow = `<div class="lineage">↘ built from <b>${polCt}</b> polic${polCt===1?'y':'ies'}` +
+                 (wmCt ? ` + <b>${wmCt}</b> world entr${wmCt===1?'y':'ies'}` : ``) + `</div>`;
+  } else if (n.kind === "policy") {
+    const trCt = (n.extra?.src_traces || []).length;
+    lineageRow = `<div class="lineage">↘ induced from <b>${trCt}</b> trace${trCt===1?'':'s'}</div>`;
+  }
+  const profileSwatch = COLORS[n.profile] || "#888";
+  el.innerHTML = `
+    <div class="badges">
+      <span class="badge ${kindBadge}">${escapeHtml(KIND_LABEL[n.kind] || n.kind)}</span>
+      <span class="badge" style="background:${profileSwatch};color:#fff;border-color:${profileSwatch}">${escapeHtml(n.profile || "?")}</span>
+      ${n.crossAgent ? '<span class="badge cross">shared</span>' : ""}
+      ${n.scope ? `<span class="badge">${escapeHtml(n.scope)}</span>` : ""}
+    </div>
+    ${n.name ? `<div class="name">${escapeHtml(n.name)}</div>` : ""}
+    <h2>${escapeHtml(n.id)}</h2>
+    <div class="text">${escapeHtml(n.text || "(no text)")}</div>
+    ${lineageRow}
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+function buildAgentBar() {
+  const bar = document.getElementById("agentbar");
+  Array.from(bar.querySelectorAll(".pill")).forEach(el => el.remove());
+  const counts = {};
+  for (const n of DATA.nodes) counts[n.profile] = (counts[n.profile] || 0) + 1;
+  const profiles = ["__ALL__", ...DATA.profiles];
+  for (const p of profiles) {
+    const pill = document.createElement("div");
+    pill.className = "pill" + (p === "__ALL__" ? " all" : "") + (activeProfile === p ? " active" : "");
+    pill.dataset.profile = p;
+    if (p === "__ALL__") {
+      pill.innerHTML = `<span class="dot" style="color: var(--accent)"></span>All <span style="opacity:0.55;margin-left:2px;font-weight:500">${DATA.nodes.length}</span>`;
+    } else {
+      const glyph = legendDotSVG(COLORS[p] || "#666", 10);
+      pill.innerHTML = `${glyph}<span style="margin-left:2px">${escapeHtml(p)}</span> <span style="opacity:0.55;margin-left:2px;font-weight:500">${counts[p] || 0}</span>`;
+    }
+    pill.addEventListener("click", () => {
+      activeProfile = p;
+      pinnedId = null;
+      buildAgentBar();
+      render();
+    });
+    bar.appendChild(pill);
+  }
+}
+
+function buildAgentLegend() {
+  const host = document.getElementById("agent-legend");
+  if (!host) return;
+  host.innerHTML = "";
+  const counts = {};
+  for (const n of DATA.nodes) counts[n.profile] = (counts[n.profile] || 0) + 1;
+  // Sort by node count desc — busiest agents at top of the legend.
+  const sorted = [...DATA.profiles].sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+  for (const p of sorted) {
+    const li = document.createElement("li");
+    // Show a hollow circle outlined in the agent's colour — matches what a node looks like.
+    const swatch = `<svg width="14" height="14" viewBox="-9 -9 18 18">
+      <circle r="6.5" fill="#ffffff" stroke="${COLORS[p] || "#9ca3af"}" stroke-width="2.5" />
+    </svg>`;
+    li.innerHTML =
+      `${swatch}<div><b>${escapeHtml(p)}</b> <span class="hint">— ${counts[p] || 0} item${counts[p] === 1 ? "" : "s"}</span></div>`;
+    host.appendChild(li);
+  }
+}
+
+function buildToggles() {
+  const host = document.getElementById("toggles");
+  host.innerHTML = "";
+  const counts = { skill: 0, policy: 0, world: 0 };
+  for (const n of DATA.nodes) counts[n.kind] = (counts[n.kind] || 0) + 1;
+  const clusterCount = Object.values(DATA.clusters || {}).filter(c => c.label && c.size >= 4).length;
+  const items = [
+    { id: "skill",   label: "Skills",  ct: counts.skill },
+    { id: "policy",  label: "Policies", ct: counts.policy },
+    { id: "cluster", label: "Topics",  ct: clusterCount },
+    { id: "world",   label: "World facts", ct: counts.world },
+  ];
+  items.forEach(({ id, label, ct }) => {
+    const lab = document.createElement("label");
+    lab.innerHTML = `
+      <span class="gly ${id}"></span>
+      <span>${label}</span>
+      <span class="ct">${ct}</span>
+      <input type="checkbox" checked />
+    `;
+    const cb = lab.querySelector("input");
+    cb.addEventListener("change", () => {
+      kindEnabled[id] = cb.checked;
+      lab.classList.toggle("off", !cb.checked);
+      render();
+    });
+    host.appendChild(lab);
+  });
+}
+
+function setupLayoutControls() {
+  document.querySelectorAll("#seg-layout button").forEach((b) => {
+    b.addEventListener("click", () => {
+      const act = b.dataset.act;
+      if (act === "settle") {
+        // free pinned positions and re-warm the simulation
+        NODES_RAW.forEach(n => { n.fx = null; n.fy = null; });
+        simulation.alpha(0.8).restart();
+      } else if (act === "reset") {
+        const w = window.innerWidth, h = window.innerHeight;
+        svgSel.transition().duration(400).call(
+          zoomBehavior.transform,
+          d3.zoomIdentity.translate(w / 2, h / 2).scale(1)
+        );
+      }
+    });
+  });
+}
+
+function setupSearch() {
+  document.getElementById("q").addEventListener("input", (e) => {
+    textQuery = e.target.value.trim().toLowerCase();
+    pinnedId = null;
+    render();
+  });
+}
+
+async function loadData() {
+  const params = new URLSearchParams(location.search);
+  const src = params.get("src") || "memory-graph.json";
+  const r = await fetch(src + "?v=" + Date.now());
+  if (!r.ok) throw new Error("failed to load " + src + ": " + r.status);
+  DATA = await r.json();
+  document.getElementById("meta").textContent =
+    `${DATA.counts.skill} skills · ${DATA.counts.policy} policies · ` +
+    `${DATA.counts.world} world · ${Object.values(DATA.clusters || {}).filter(c => c.label).length} topics`;
+
+  DATA.profiles.forEach((p, i) => { COLORS[p] = PALETTE[i % PALETTE.length]; });
+
+  const w = window.innerWidth, h = window.innerHeight;
+  svgSel = d3.select("#canvas svg")
+    .attr("width", "100%")
+    .attr("height", "100%");
+  gRoot = svgSel.append("g");
+  gRoot.append("g").attr("class", "links");
+  gRoot.append("g").attr("class", "link-labels");
+  gRoot.append("g").attr("class", "nodes");
+
+  zoomBehavior = d3.zoom()
+    .scaleExtent([0.25, 4])
+    .on("zoom", (ev) => gRoot.attr("transform", ev.transform));
+  svgSel.call(zoomBehavior);
+  svgSel.call(zoomBehavior.transform, d3.zoomIdentity.translate(w / 2, h / 2).scale(1));
+
+  // Click empty canvas = unpin
+  svgSel.on("click", () => { pinnedId = null; applyHighlight(); });
+
+  buildAgentBar();
+  buildAgentLegend();
+  buildToggles();
+  setupLayoutControls();
+  setupSearch();
+  render();
+}
+
+loadData().catch((err) => {
+  document.getElementById("canvas").innerHTML =
+    '<p style="padding:30px;color:#dc2626;font-family:monospace">' + escapeHtml(err.message) + '</p>';
+});
+</script>
+</body>
+</html>

@@ -190,7 +190,7 @@ python3.12 tools/memos-explorer.py audit --since 1h                # share_scope
 # Then open: https://tower.taila4a33f.ts.net/umap-viewer.html
 ```
 
-### Interactive UMAP viewers
+### Interactive Memory Viewer
 
 Three viewers, increasing in richness:
 
@@ -198,30 +198,68 @@ Three viewers, increasing in richness:
 |---|---|---|---|
 | `tools/umap-viewer.html` | Plotly.js (2D scatter) | `vec-map.json` (traces only) | `/umap-viewer.html` |
 | `tools/umap-3d-viewer.html` | deck.gl (3D scatter) | `vec-map-3d.json` (traces only) | `/umap-3d-viewer.html` |
-| **`tools/memory-map.html`** | **deck.gl (3D)** | **`memory-graph.json` (full graph)** | **`/memory-map.html`** (also as sidebar tab in the bundled viewer) |
+| **`tools/memory-map.html`** | **D3 v7 force-directed graph (light theme)** | **`memory-graph.json` (full lineage)** | **`/memory-map.html`** (also as sidebar **"Viewer"** tab in the bundled UI) |
 
-The full **Memory Map** viewer renders **all four artifact kinds** (traces ↘ policies ↘ world_model ↘ skills) at distinct Z levels showing the L1 → L2 → L3 abstraction hierarchy vertically, with **lineage edges** between them (policy ↗ source traces, skill ↗ source policies, etc.). Each profile gets a "View as" pill at the top; clicking a pill focuses on that agent's slice and dims the rest. Layer checkboxes let you peel away L1/L2/L3 to study just one. Clicking a node lights up its full lineage chain (source policies / source traces of a skill, etc.).
+The Memory Viewer is the canonical visualiser. It renders Skills · Policies · Topic hubs · World facts as a node-link knowledge graph (no scatter, no 3D, no orbit). After an iteration that tried UMAP scatter + deck.gl 3D and was judged too noisy, the final v3 design is a clean D3 force-directed layout against a light `#fafbfc` background:
 
-Implementation: a single joint UMAP fit over all artifacts (traces + policies + skills + world_model) — so cross-kind semantic neighbours sit vertically aligned. Z is assigned by kind. For artifact rows missing a stored embedding vector (most policies/skills/world_model on first run), the explorer embeds them on the fly via BGE-large.
+- **Nodes:** ~35 Skills (pink fill), ~127 Policies (cyan fill), ~36 Topic hubs (purple fill — DeepSeek-labelled clusters), ~3 World facts (gold fill). Traces themselves are **not** rendered individually — they're aggregated into the cluster hub they belong to (the hub label IS the topic). That keeps the node count to ~200 instead of ~625.
+- **Edges:** real lineage from the data — `skill→policy` ("USES"), `skill→world` ("READS"), `world→policy` ("FACT FROM"), plus a derived `policy→cluster` edge ("FROM") built by majority-vote over each policy's `src_traces[*].cluster`.
+- **Encoding scheme:** **fill colour = node kind** (so users can scan "what" at a glance), **border colour = owning agent** (so "whose" reads as a secondary thin-ring signal). Topic hubs use a neutral grey border since they aggregate multiple agents. Edge labels surface only on the 1-hop highlight when a node is pinned (otherwise the canvas would be too dense).
+- **Interaction:** click any circle → pin it, vivid 1-hop neighbours, rest dimmed, edge labels visible. Drag any circle to reposition; the simulation stays warm. "Re-settle" rewarms the force; "Reset view" recenters the d3-zoom transform. Search filters by name/topic text. View-as agent pills at the top filter the slice.
+- **Bundle:** `tools/d3.v7.min.js` ships in-repo because `d3js.org` was unreachable from the box at the time and we don't want the viewer to break on network blips. The postinstall script symlinks it next to `memory-map.html` in the plugin's static root.
 
 Generate the data, then open:
 
 ```bash
-# Full memory graph (recommended)
+# Full memory graph (recommended) — drives memory-map.html
 ~/.hermes/tools-venv/bin/python tools/memos-explorer.py graph-export \
    --out tools/memory-graph.json
-# Open via the sidebar tab in the bundled viewer (the v2 plugin's
-# left rail now shows a "Memory Map" icon), or directly:
+
+# Open via the sidebar "Viewer" tab in the bundled UI, or directly:
 xdg-open https://tower.taila4a33f.ts.net/memory-map.html
 
-# Legacy trace-only viewers
+# Legacy trace-only viewers (kept; less useful than the lineage graph)
 ~/.hermes/tools-venv/bin/python tools/memos-explorer.py project \
    --out tools/vec-map.png --json tools/vec-map.json                    # 2D
 ~/.hermes/tools-venv/bin/python tools/memos-explorer.py project --3d \
    --out tools/vec-map-3d.png --json tools/vec-map-3d.json              # 3D, traces only
 ```
 
-The "Memory Map" sidebar tab is injected by `web/dist/hermes-profile-switcher.js` (the same overlay that runs the view-as toggle) — it MutationObserver-watches the React app's sidebar and adds an `<a href="/memory-map.html">` next to the built-in icons.
+The "Viewer" sidebar tab is injected by `web/dist/hermes-profile-switcher.js` (the same overlay that runs the view-as toggle) — it MutationObserver-watches the React app's sidebar and adds an `<a href="/memory-map.html">` next to the built-in icons.
+
+### Cluster topic labelling
+
+`memos-explorer.py graph-export` runs HDBSCAN on the joint UMAP coordinates, takes the top ~6 most-representative member snippets per cluster, and sends them to DeepSeek (`deepseek-chat`) with the prompt *"reply with a single 4-6 word noun phrase that captures the single topic they share."* Labels are stored on each cluster object (`clusters[clusterId].label`) and the viewer renders them as the topic-hub node text. Latest regen: **36/36 cross-agent clusters labelled** with topics like *"Hermes file system searches"*, *"RAM upgrade advice and specifications"*, *"MemOS hub mode configuration issues"*, *"Agent memory isolation and scoping"*. ~36 DeepSeek calls per regen, <10s, ~$0.001. Helper code: `label_clusters()` in `memos-explorer.py`.
+
+### Auto-refresh watcher (systemd)
+
+`memory-graph.json` is **not** regenerated on every memos write — that would queue a 40–60s BGE-large embedding + UMAP fit + 36 DeepSeek calls per turn. Instead a small Python daemon watches `~/.hermes/memos-plugin/data/memos.db-wal` (SQLite's write-ahead log, which mutates on every plugin write) and triggers a regen once activity has been quiet for 5 minutes, with a 15-minute floor between regens so bursts don't thrash.
+
+| Component | Path |
+|---|---|
+| Daemon | `tools/memory-graph-watcher.py` |
+| Systemd unit | `~/.config/systemd/user/memory-graph-watcher.service` |
+| Logs | `journalctl --user -u memory-graph-watcher -f` |
+
+```bash
+# Manage the watcher
+systemctl --user status memory-graph-watcher
+systemctl --user restart memory-graph-watcher
+journalctl --user -u memory-graph-watcher -n 30 --no-pager
+
+# Force a one-off regen (skips the watcher path)
+~/.hermes/tools-venv/bin/python tools/memos-explorer.py graph-export \
+   --out tools/memory-graph.json
+```
+
+Tuning lives at the top of `memory-graph-watcher.py`: `POLL_INTERVAL=5s`, `DEBOUNCE=5min`, `MIN_INTERVAL=15min`, `STARTUP_SETTLE=30s`. The startup-settle delay prevents a spurious regen if the daemon comes back after a reboot and the WAL file looks "new" even though no real write happened.
+
+The systemd unit ships in-repo at `tower/services/memory-graph-watcher.service` (template — copied into `~/.config/systemd/user/` on the box). After dropping it in, enable with:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now memory-graph-watcher.service
+```
 
 ## Shared-skill attribution patch (applied 2026-05-17)
 
@@ -288,33 +326,6 @@ The plugin's daemon doesn't natively read `.env` files — systemd units set `En
 **Adding a new human:** append to the `MEMOS_HUMANS` line in `~/.hermes/.env` and restart the daemon (`pkill -9 -f memos-plugin/bridge.cts && ./postinstall-patches.sh` will respawn). If the new human has a known Discord/Telegram handle, list it after `:`.
 
 **Open follow-up:** re-summarising the old "User asks…" traces with the new prompt is optional. It'd require triggering capture.reflect again on each historical episode. Skipped for now; new captures from this point on use named attribution.
-
-## Cluster summarisation + auto-refresh watcher (applied 2026-05-17)
-
-Two operational follow-ups landed end of day:
-
-**1. Cluster topic labels.** `memos-explorer.py graph-export` now runs HDBSCAN on the joint UMAP coordinates, picks the top ~6 most-representative member snippets per cluster, and sends them to DeepSeek (`deepseek-chat`) with the prompt *"reply with a single 4-6 word noun phrase that captures the single topic they share."* Labels are stored in `memory-graph.json` on each cluster object (`clusters[clusterId].label`) and rendered by `memory-map.html` via a deck.gl `TextLayer` — gold background + bigger size for **cross-agent clusters** (the actually-useful "shared knowledge" view), washed-out blue for solo-agent clusters. A "Labels On/Off" toggle hides them when the canvas gets busy. Latest run: **36/36 cross-agent clusters labelled** with topics like *"Hermes system file searches"*, *"RAM upgrade advice and specifications"*, *"MemOS hub mode configuration issues"*, *"Agent memory isolation and scoping"*. ~36 DeepSeek calls, <10s, ~$0.001 per regen. Helper code: `label_clusters()` in `memos-explorer.py`; viewer code: `buildClusterLabels()` in `memory-map.html`.
-
-**2. Auto-refresh watcher.** `memory-graph.json` is **not** regenerated on every memos write — that would queue a 40–60s BGE-large embedding + UMAP fit + 36 DeepSeek calls per turn. Instead a small Python daemon watches `~/.hermes/memos-plugin/data/memos.db-wal` (SQLite's write-ahead log, which mutates on every plugin write) and triggers a regen once activity has been quiet for 5 minutes, with a 15-minute floor between regens so bursts don't thrash.
-
-| Component | Path |
-|---|---|
-| Daemon | `tools/memory-graph-watcher.py` |
-| Systemd unit | `~/.config/systemd/user/memory-graph-watcher.service` |
-| Logs | `journalctl --user -u memory-graph-watcher -f` |
-
-```bash
-# Manage the watcher
-systemctl --user status memory-graph-watcher
-systemctl --user restart memory-graph-watcher
-journalctl --user -u memory-graph-watcher -n 30 --no-pager
-
-# Force a one-off regen (skips watcher path)
-~/.hermes/tools-venv/bin/python tools/memos-explorer.py graph-export \
-   --out tools/memory-graph.json
-```
-
-Tuning lives at the top of `memory-graph-watcher.py`: `POLL_INTERVAL=5s`, `DEBOUNCE=5min`, `MIN_INTERVAL=15min`, `STARTUP_SETTLE=30s`. The startup-settle delay prevents a spurious regen if the daemon comes back after a reboot and the WAL file looks "new" even though no real write happened.
 
 ## Open follow-ups
 

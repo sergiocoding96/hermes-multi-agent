@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Hermes Memory · 3D UMAP Explorer</title>
+<script src="https://unpkg.com/deck.gl@9.0.31/dist.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e1f;
+    --bg-deep: #050810;
+    --panel: rgba(20, 28, 50, 0.78);
+    --panel-solid: #141c32;
+    --rule: rgba(255, 255, 255, 0.08);
+    --text: #e8ecf1;
+    --text-dim: #8b95a5;
+    --accent: #ff8c42;
+    --accent-soft: rgba(255, 140, 66, 0.18);
+    --pill: rgba(255, 255, 255, 0.06);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body {
+    background: radial-gradient(ellipse at top, #1a2342 0%, var(--bg) 50%, var(--bg-deep) 100%);
+    color: var(--text);
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  #canvas-host { position: absolute; inset: 0; }
+  canvas { display: block; }
+
+  /* Floating top-left header */
+  header {
+    position: absolute; top: 18px; left: 22px; z-index: 10;
+    display: flex; align-items: baseline; gap: 14px;
+    backdrop-filter: blur(10px) saturate(140%);
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 10px; padding: 10px 16px;
+  }
+  header .kicker {
+    color: var(--accent); text-transform: uppercase; font-size: 10px;
+    letter-spacing: 0.16em; font-weight: 700;
+  }
+  header h1 {
+    margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+  }
+  header .meta { color: var(--text-dim); font-size: 11px; }
+
+  /* Right control panel */
+  aside.controls {
+    position: absolute; top: 18px; right: 18px; bottom: 18px;
+    width: 300px; z-index: 10;
+    backdrop-filter: blur(14px) saturate(150%);
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 10px; padding: 16px 16px 14px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  aside.controls h3 {
+    margin: 0 0 6px 0; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-dim);
+  }
+
+  input[type="search"] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--rule);
+    border-radius: 6px; font: inherit; font-size: 13px;
+    background: rgba(0,0,0,0.25); color: var(--text);
+  }
+  input[type="search"]:focus { outline: 2px solid var(--accent); }
+
+  .seg {
+    display: flex; gap: 2px; background: var(--pill); padding: 2px;
+    border-radius: 6px;
+  }
+  .seg button {
+    flex: 1; padding: 6px 8px; border: 0; background: transparent;
+    color: var(--text-dim); font: 600 11px/1.2 inherit; cursor: pointer;
+    border-radius: 4px;
+  }
+  .seg button.active {
+    background: var(--accent); color: #0a0e1f;
+  }
+  .seg.subtle button.active {
+    background: rgba(255,255,255,0.12); color: var(--text);
+  }
+
+  .profiles { display: flex; flex-direction: column; gap: 2px; }
+  .profiles label {
+    display: flex; align-items: center; gap: 9px;
+    padding: 5px 8px; border-radius: 5px; cursor: pointer; font-size: 12px;
+  }
+  .profiles label:hover { background: var(--pill); }
+  .profiles label .sw {
+    width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 8px currentColor;
+  }
+  .profiles label .ct {
+    margin-left: auto; color: var(--text-dim); font-feature-settings: "tnum";
+  }
+  .profiles label input { display: none; }
+  .profiles label.off { opacity: 0.4; }
+  .profiles label.off .sw { box-shadow: none; }
+
+  .stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .stats .stat {
+    background: var(--pill); padding: 8px 10px; border-radius: 6px;
+  }
+  .stats .stat b {
+    display: block; font-size: 18px; font-weight: 700;
+    font-feature-settings: "tnum"; color: var(--text);
+  }
+  .stats .stat span {
+    color: var(--text-dim); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em;
+  }
+
+  /* Detail card top-right under controls (separate floating panel) */
+  .detail {
+    position: absolute; bottom: 18px; left: 18px;
+    width: min(440px, 36vw); z-index: 10;
+    backdrop-filter: blur(14px) saturate(150%);
+    background: var(--panel); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 14px 16px;
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+  .detail.empty { opacity: 0.55; }
+  .detail .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .detail .badge {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; padding: 3px 8px; border-radius: 12px;
+    background: rgba(255,255,255,0.08); color: var(--text-dim);
+  }
+  .detail .badge.profile { color: #0a0e1f; }
+  .detail .badge.cross { background: var(--accent-soft); color: var(--accent); }
+  .detail h2 {
+    margin: 0 0 8px 0; font-size: 11px; font-weight: 600;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    color: var(--text-dim);
+    word-break: break-all;
+  }
+  .detail .summary {
+    font-size: 13px; line-height: 1.5; color: var(--text);
+  }
+  .detail .meta-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px;
+    margin-top: 10px;
+    font-size: 11px; color: var(--text-dim);
+    font-feature-settings: "tnum";
+  }
+  .detail .meta-row b { color: var(--text); font-weight: 600; }
+
+  /* Inline help legend at top of control panel */
+  .legend-box {
+    background: linear-gradient(180deg, rgba(255,140,66,0.08), rgba(255,140,66,0.02));
+    border: 1px solid rgba(255,140,66,0.28);
+    border-radius: 8px;
+    padding: 11px 12px;
+  }
+  .legend-box h3 {
+    margin: 0 0 8px 0; color: var(--accent);
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.12em;
+  }
+  .legend-box ul { margin: 0; padding: 0; list-style: none;
+    display: flex; flex-direction: column; gap: 7px; }
+  .legend-box li {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 11px; line-height: 1.45; color: var(--text);
+  }
+  .legend-box li b { color: var(--text); font-weight: 600; }
+  .legend-box li .hint { color: var(--text-dim); }
+  .legend-box .lswatch {
+    flex: 0 0 12px; height: 12px; border-radius: 50%;
+    margin-top: 1px; background: #4c78a8;
+  }
+  .legend-box .lswatch.solo { background: #54a24b; }
+  .legend-box .lswatch.cross {
+    background: #4c78a8;
+    border: 1.5px solid #fff;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.35), 0 0 8px rgba(255,255,255,0.4);
+  }
+
+  /* Hover tooltip */
+  #tip {
+    position: absolute; pointer-events: none; z-index: 20;
+    background: rgba(15, 32, 66, 0.95); color: #fff;
+    padding: 6px 9px; border-radius: 6px;
+    border: 1px solid var(--accent);
+    font-size: 11px; line-height: 1.4; max-width: 280px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+    transform: translate(8px, 8px);
+    display: none;
+  }
+  #tip b { color: var(--accent); }
+
+  .hint {
+    position: absolute; bottom: 18px; right: 18px; z-index: 10;
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 8px; padding: 6px 10px;
+    font-size: 10px; color: var(--text-dim);
+    backdrop-filter: blur(8px);
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-host"></div>
+
+<header>
+  <div>
+    <div class="kicker">Hermes · 3D Memory Map</div>
+    <h1>UMAP projection</h1>
+  </div>
+  <div class="meta" id="meta">…</div>
+</header>
+
+<aside class="controls">
+  <div class="legend-box">
+    <h3>How to read this map</h3>
+    <ul>
+      <li>
+        <span class="lswatch solo"></span>
+        <div><b>Each dot = one memory.</b> <span class="hint">Dots near each other are about similar things.</span></div>
+      </li>
+      <li>
+        <span class="lswatch" style="background:#4c78a8"></span>
+        <div><b>Color = which agent.</b> <span class="hint">Toggle agents below.</span></div>
+      </li>
+      <li>
+        <span class="lswatch cross"></span>
+        <div><b>White-glow dots = "shared topic".</b> <span class="hint">≥2 agents have memories near here — good candidates to make into shared knowledge.</span></div>
+      </li>
+    </ul>
+  </div>
+
+  <div>
+    <h3>Search</h3>
+    <input id="q" type="search" placeholder="filter summaries…" />
+  </div>
+
+  <div>
+    <h3>Filter mode</h3>
+    <div class="seg" id="seg-mode">
+      <button class="active" data-mode="all">All</button>
+      <button data-mode="cross">Shared</button>
+      <button data-mode="solo">Solo</button>
+    </div>
+  </div>
+
+  <div>
+    <h3>Camera</h3>
+    <div class="seg subtle" id="seg-cam">
+      <button class="active" data-cam="orbit">Orbit</button>
+      <button data-cam="top">Top down</button>
+      <button data-cam="reset">Reset</button>
+    </div>
+  </div>
+
+  <div>
+    <h3>Profiles</h3>
+    <div class="profiles" id="profiles"></div>
+  </div>
+
+  <div>
+    <h3>Stats</h3>
+    <div class="stats">
+      <div class="stat"><b id="stat-visible">—</b><span>visible</span></div>
+      <div class="stat"><b id="stat-cross">—</b><span>cross-agent</span></div>
+      <div class="stat"><b id="stat-clusters">—</b><span>clusters</span></div>
+      <div class="stat"><b id="stat-profiles">—</b><span>profiles</span></div>
+    </div>
+  </div>
+</aside>
+
+<div id="detail" class="detail empty">
+  <div class="badges"><span class="badge">no selection</span></div>
+  <div class="summary" style="color: var(--text-dim)">
+    Hover a point to peek. Click to pin.
+    Drag to orbit · scroll to zoom · right-drag to pan.
+  </div>
+</div>
+
+<div id="tip"></div>
+<div class="hint">deck.gl · UMAP(3D)</div>
+
+<script>
+// Profile palette intentionally avoids orange/red so the cross-agent
+// indicator (orange UI accents + white halos) can't be confused with a
+// profile color. Colorblind-friendlier than the default tab10.
+const PALETTE = [
+  "#4c78a8", // blue
+  "#54a24b", // green
+  "#b279a2", // purple
+  "#72b7b2", // teal
+  "#cc6699", // magenta
+  "#6b9080", // sage
+  "#8da0cb", // lavender
+  "#1f9197", // deep teal
+];
+
+let DATA = null;
+let COLORS = {};
+let activeProfiles = new Set();
+let filterMode = "all";
+let textQuery = "";
+let deckInstance = null;
+let pinnedPoint = null;
+let CENTER = [0, 0, 0];
+let SCALE = 1;
+
+const INITIAL_VIEW = {
+  target: [0, 0, 0],
+  rotationX: 30, rotationOrbit: -40, zoom: 1,
+  minZoom: -2, maxZoom: 6,
+};
+
+function clamp(x, lo, hi) { return Math.min(hi, Math.max(lo, x)); }
+
+// Project x/y/z onto a "world" cube centred on origin for visual balance.
+function buildWorldPoints() {
+  const xs = DATA.points.map(p => p.x);
+  const ys = DATA.points.map(p => p.y);
+  const zs = DATA.points.map(p => p.z ?? 0);
+  const mid = (a) => (Math.min(...a) + Math.max(...a)) / 2;
+  const span = (a) => Math.max(0.01, Math.max(...a) - Math.min(...a));
+  CENTER = [mid(xs), mid(ys), mid(zs)];
+  SCALE = 100 / Math.max(span(xs), span(ys), span(zs));
+  return DATA.points.map(p => ({
+    ...p,
+    pos: [
+      (p.x - CENTER[0]) * SCALE,
+      (p.y - CENTER[1]) * SCALE,
+      ((p.z ?? 0) - CENTER[2]) * SCALE,
+    ],
+  }));
+}
+
+function shouldShow(p) {
+  if (!activeProfiles.has(p.profile)) return false;
+  if (filterMode === "cross" && !p.crossAgent) return false;
+  if (filterMode === "solo" && p.crossAgent) return false;
+  if (textQuery && !(p.summary || "").toLowerCase().includes(textQuery)) return false;
+  return true;
+}
+
+function hexToRGB(hex) {
+  const h = hex.replace("#", "");
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+}
+
+function buildLayers() {
+  const all = buildWorldPoints();
+  const visible = all.filter(shouldShow);
+  // Update stats
+  document.getElementById("stat-visible").textContent = visible.length;
+  document.getElementById("stat-cross").textContent = visible.filter(p => p.crossAgent).length;
+  document.getElementById("stat-clusters").textContent =
+    new Set(visible.filter(p => p.cluster >= 0).map(p => p.cluster)).size;
+  document.getElementById("stat-profiles").textContent =
+    new Set(visible.map(p => p.profile)).size;
+
+  return [
+    // Solo-agent points: small, opaque, profile-coloured.
+    new deck.PointCloudLayer({
+      id: "points-solo",
+      data: visible.filter(p => !p.crossAgent),
+      getPosition: d => d.pos,
+      getColor: d => [...hexToRGB(COLORS[d.profile]), 220],
+      sizeUnits: "pixels",
+      pointSize: 6,
+      opacity: 1,
+      pickable: true,
+      onHover: handleHover,
+      onClick: handleClick,
+    }),
+    // Cross-agent points: glowing WHITE halo behind a profile-colored core.
+    // White (not orange) so the halo doesn't compete with the orange UI
+    // accents used for badges + chips, and so any profile color reads
+    // distinctly underneath.
+    new deck.PointCloudLayer({
+      id: "halo-cross",
+      data: visible.filter(p => p.crossAgent),
+      getPosition: d => d.pos,
+      getColor: d => [255, 255, 255, 60],
+      sizeUnits: "pixels",
+      pointSize: 24,
+      opacity: 1,
+      pickable: false,
+    }),
+    new deck.PointCloudLayer({
+      id: "points-cross",
+      data: visible.filter(p => p.crossAgent),
+      getPosition: d => d.pos,
+      getColor: d => [...hexToRGB(COLORS[d.profile]), 250],
+      sizeUnits: "pixels",
+      pointSize: 10,
+      opacity: 1,
+      pickable: true,
+      onHover: handleHover,
+      onClick: handleClick,
+    }),
+    // Highlight ring for pinned point
+    pinnedPoint ? new deck.PointCloudLayer({
+      id: "pinned",
+      data: [all.find(p => p.id === pinnedPoint.id)].filter(Boolean),
+      getPosition: d => d.pos,
+      getColor: d => [255, 140, 66, 255],
+      sizeUnits: "pixels",
+      pointSize: 14,
+      opacity: 1,
+      pickable: false,
+    }) : null,
+  ].filter(Boolean);
+}
+
+function handleHover({ object, x, y }) {
+  const tip = document.getElementById("tip");
+  if (!object) { tip.style.display = "none"; return; }
+  tip.style.display = "block";
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+  tip.innerHTML = `<b>${escapeHtml(object.profile)}</b><br/>${escapeHtml((object.summary || "").slice(0, 220))}`;
+  if (!pinnedPoint) showDetail(object);
+}
+
+function handleClick({ object }) {
+  if (!object) return;
+  pinnedPoint = object;
+  showDetail(object);
+  rebuild();
+}
+
+function rebuild() {
+  deckInstance.setProps({ layers: buildLayers() });
+}
+
+function showDetail(p) {
+  const el = document.getElementById("detail");
+  el.classList.remove("empty");
+  el.innerHTML = `
+    <div class="badges">
+      <span class="badge profile" style="background:${COLORS[p.profile]}">${escapeHtml(p.profile)}</span>
+      ${p.crossAgent ? '<span class="badge cross">shared topic</span>' : ""}
+      <span class="badge">${escapeHtml(p.scope || "?")}</span>
+    </div>
+    <h2>${escapeHtml(p.id)}</h2>
+    <div class="summary">${escapeHtml(p.summary || "(no summary)")}</div>
+    <div class="meta-row">
+      <div>cluster <b>${p.cluster >= 0 ? "#" + p.cluster : "—"}</b></div>
+      <div>captured <b>${p.ts ? new Date(p.ts).toLocaleString() : "—"}</b></div>
+      <div>UMAP <b>(${p.x.toFixed(2)}, ${p.y.toFixed(2)}${p.z !== undefined ? ", " + p.z.toFixed(2) : ""})</b></div>
+      <div>scope <b>${escapeHtml(p.scope || "?")}</b></div>
+    </div>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function buildProfilesUI() {
+  const host = document.getElementById("profiles");
+  host.innerHTML = "";
+  const counts = {};
+  for (const p of DATA.points) counts[p.profile] = (counts[p.profile] || 0) + 1;
+  DATA.profiles.forEach((p) => {
+    const lab = document.createElement("label");
+    lab.dataset.profile = p;
+    const c = COLORS[p];
+    lab.innerHTML = `
+      <span class="sw" style="background:${c};color:${c}"></span>
+      <span>${escapeHtml(p)}</span>
+      <span class="ct">${counts[p] || 0}</span>
+      <input type="checkbox" checked />
+    `;
+    const cb = lab.querySelector("input");
+    cb.addEventListener("change", () => {
+      if (cb.checked) activeProfiles.add(p);
+      else activeProfiles.delete(p);
+      lab.classList.toggle("off", !cb.checked);
+      rebuild();
+    });
+    host.appendChild(lab);
+  });
+}
+
+function setupCamera() {
+  const buttons = document.querySelectorAll("#seg-cam button");
+  buttons.forEach((b) => {
+    b.addEventListener("click", () => {
+      buttons.forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      const mode = b.dataset.cam;
+      let view;
+      if (mode === "top") view = { target: [0,0,0], rotationX: 89, rotationOrbit: 0, zoom: 1 };
+      else if (mode === "reset") view = INITIAL_VIEW;
+      else view = INITIAL_VIEW;
+      deckInstance.setProps({
+        initialViewState: { ...INITIAL_VIEW, ...view, transitionDuration: 600 },
+      });
+    });
+  });
+}
+
+function setupMode() {
+  document.querySelectorAll("#seg-mode button").forEach((b) => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll("#seg-mode button").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      filterMode = b.dataset.mode;
+      rebuild();
+    });
+  });
+}
+
+function setupSearch() {
+  document.getElementById("q").addEventListener("input", (e) => {
+    textQuery = e.target.value.trim().toLowerCase();
+    rebuild();
+  });
+}
+
+async function loadData() {
+  const params = new URLSearchParams(location.search);
+  const src = params.get("src") || "vec-map-3d.json";
+  const r = await fetch(src + "?v=" + Date.now());
+  if (!r.ok) throw new Error("failed to load " + src + ": " + r.status);
+  DATA = await r.json();
+  document.getElementById("meta").textContent =
+    `${DATA.points.length} traces · ${DATA.model || "BGE-large"} · ` +
+    `UMAP(${DATA.umap?.n_components || 2}D, n=${DATA.umap?.n_neighbors}, min_dist=${DATA.umap?.min_dist})`;
+  DATA.profiles.forEach((p, i) => { COLORS[p] = PALETTE[i % PALETTE.length]; });
+  activeProfiles = new Set(DATA.profiles);
+
+  buildProfilesUI();
+  setupMode();
+  setupCamera();
+  setupSearch();
+
+  deckInstance = new deck.Deck({
+    parent: document.getElementById("canvas-host"),
+    views: new deck.OrbitView({ orbitAxis: "Z", fov: 50 }),
+    initialViewState: INITIAL_VIEW,
+    controller: true,
+    layers: buildLayers(),
+    parameters: { clearColor: [0.02, 0.03, 0.06, 1] },
+    onClick: (info) => {
+      if (!info.object) { pinnedPoint = null; rebuild(); }
+    },
+  });
+}
+
+loadData().catch((err) => {
+  document.getElementById("canvas-host").innerHTML =
+    '<p style="padding:30px;color:#ff8c42;font-family:monospace">' + escapeHtml(err.message) + '</p>';
+});
+</script>
+</body>
+</html>
