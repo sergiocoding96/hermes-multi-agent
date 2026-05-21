@@ -4,17 +4,20 @@
 
 **Memory architecture: v2 `@memtensor/memos-local-plugin` only. Paperclip + CEO orchestration retired 2026-05-17. v1 MemOS server stopped + disabled — kept on disk for rollback only.**
 
+**2026-05-21 — CTO agent added (on Claude Code, not Hermes).** A standalone CTO persona lives at `~/Coding/Hermes-CTO`, wired to the v2 plugin as a new `cto` profile (memory tools via MCP + auto-capture hooks, all over the stdio bridge). It advises, delegates to the Hermes agents (`scripts/delegate-agent.sh` → `hermes -z`), and is callable by them (`scripts/ask-cto.sh` → `claude -p`). This re-introduces *peer* cross-agent interaction but **no central orchestrator and no cross-machine routing** — the v2-only stance otherwise holds. Same session also fixed the dirty-episode cold-boot stall (7 episodes marked `reward.skipped`) that caused the bridge process leak.
+
 Any new agent working in this repo should read these before acting:
 
-1. **Current decision doc:** [`memos-setup/learnings/2026-05-17-v2-only-bge-shares.md`](memos-setup/learnings/2026-05-17-v2-only-bge-shares.md) — drop CEO/Paperclip, commit to v2, BGE-large embedder, share_scope policy
-2. **Previous decision (single-tier MemOS):** [`memos-setup/learnings/2026-04-28-collapse-to-single-tier-memos.md`](memos-setup/learnings/2026-04-28-collapse-to-single-tier-memos.md) — superseded by the May 17 doc; preserved for context on what was tried before
-3. **Previous direction (v1 audit + remediation):** [`memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md`](memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md) — historical; v2 is now the chosen path despite the original audit
-4. **Merged architecture brief (start here for slides):** [`docs/architecture/2026-05-17-memory-system-brief.pdf`](docs/architecture/2026-05-17-memory-system-brief.pdf) — 34-slide consolidated brief: decisions + orphan-cron root cause + plugin patches + tooling + speaker attribution + final state. Merge of the two source decks below, dedup'd. Editable source: [`2026-05-17-memory-system-brief.pptx`](docs/architecture/2026-05-17-memory-system-brief.pptx).
+1. **Latest decision doc (CTO agent + dirty-episode fix):** [`memos-setup/learnings/2026-05-21-cto-agent-on-claude-code.md`](memos-setup/learnings/2026-05-21-cto-agent-on-claude-code.md) — CTO-on-Claude-Code, memory wiring, cross-agent invocation, cold-boot fix
+2. **Memory architecture decision:** [`memos-setup/learnings/2026-05-17-v2-only-bge-shares.md`](memos-setup/learnings/2026-05-17-v2-only-bge-shares.md) — drop CEO/Paperclip, commit to v2, BGE-large embedder, share_scope policy
+3. **Previous decision (single-tier MemOS):** [`memos-setup/learnings/2026-04-28-collapse-to-single-tier-memos.md`](memos-setup/learnings/2026-04-28-collapse-to-single-tier-memos.md) — superseded by the May 17 doc; preserved for context on what was tried before
+4. **Previous direction (v1 audit + remediation):** [`memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md`](memos-setup/learnings/2026-04-27-v2-deprecated-revert-to-v1.md) — historical; v2 is now the chosen path despite the original audit
+5. **Merged architecture brief (start here for slides):** [`docs/architecture/2026-05-17-memory-system-brief.pdf`](docs/architecture/2026-05-17-memory-system-brief.pdf) — 34-slide consolidated brief: decisions + orphan-cron root cause + plugin patches + tooling + speaker attribution + final state. Merge of the two source decks below, dedup'd. Editable source: [`2026-05-17-memory-system-brief.pptx`](docs/architecture/2026-05-17-memory-system-brief.pptx).
    - Source A: [`2026-05-17-memory-system-decisions.pptx`](docs/architecture/2026-05-17-memory-system-decisions.pptx) — original architectural review deck
    - Source B: [`2026-05-17-session-summary.pptx`](docs/architecture/2026-05-17-session-summary.pptx) — one-day overhaul summary deck
-5. **MVP-readiness brief (historical):** [`tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf`](tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf) — pre-fix v1 audit; relevant only if you ever revisit v1
-6. **Two-repo team explainer:** [`docs/architecture/two-repos.pdf`](docs/architecture/two-repos.pdf) — how this repo and the MemOS fork relate
-7. **Superseded — historical only:** [`memos-setup/learnings/2026-04-20-v2-migration-plan.md`](memos-setup/learnings/2026-04-20-v2-migration-plan.md)
+6. **MVP-readiness brief (historical):** [`tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf`](tests/v1/reports/combined/v1-mvp-readiness-2026-04-26.pdf) — pre-fix v1 audit; relevant only if you ever revisit v1
+7. **Two-repo team explainer:** [`docs/architecture/two-repos.pdf`](docs/architecture/two-repos.pdf) — how this repo and the MemOS fork relate
+8. **Superseded — historical only:** [`memos-setup/learnings/2026-04-20-v2-migration-plan.md`](memos-setup/learnings/2026-04-20-v2-migration-plan.md)
 
 If you are working inside a **worktree** under `~/Coding/Hermes-wt/`, read the `TASK.md` in that directory — it's your full brief.
 
