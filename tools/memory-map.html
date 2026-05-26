@@ -22,6 +22,7 @@
     --policy-fill: #cffafe;  --policy-stroke: #0891b2;
     --cluster-fill: #ede9fe; --cluster-stroke: #7c3aed;
     --world-fill: #fef3c7;   --world-stroke: #d97706;
+    --trace-fill: #e2e8f0;   --trace-stroke: #64748b;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
@@ -134,6 +135,7 @@
   .gly.policy  { background: var(--policy-fill);  border-color: var(--policy-stroke); }
   .gly.cluster { background: var(--cluster-fill); border-color: var(--cluster-stroke); }
   .gly.world   { background: var(--world-fill);   border-color: var(--world-stroke); }
+  .gly.trace   { background: var(--trace-fill);   border-color: var(--trace-stroke); }
 
   input[type="search"] {
     width: 100%; padding: 7px 10px;
@@ -203,6 +205,7 @@
   .detail .badge.kind-policy  { background: var(--policy-fill);  color: #164e63; border-color: var(--policy-stroke); }
   .detail .badge.kind-cluster { background: var(--cluster-fill); color: #4c1d95; border-color: var(--cluster-stroke); }
   .detail .badge.kind-world   { background: var(--world-fill);   color: #78350f; border-color: var(--world-stroke); }
+  .detail .badge.kind-trace   { background: var(--trace-fill);   color: #334155; border-color: var(--trace-stroke); }
   .detail .badge.cross { background: var(--accent); color: #ffffff; border-color: var(--accent); }
   .detail h2 {
     margin: 0 0 6px 0; font-size: 10px; font-weight: 600;
@@ -248,6 +251,7 @@
   .node.kind-policy  .shape { fill: var(--policy-fill);  }
   .node.kind-cluster .shape { fill: var(--cluster-fill); stroke-width: 2.0; }
   .node.kind-world   .shape { fill: var(--world-fill);   }
+  .node.kind-trace   .shape { fill: var(--trace-fill);   }
   .node.cross .shape { filter: drop-shadow(0 0 6px rgba(249, 115, 22, 0.30)); }
   .node.dim .shape, .node.dim text { opacity: 0.18; }
   .node.pinned .shape { stroke-width: 5; }
@@ -300,6 +304,7 @@
       <li><span class="gly policy"></span>  <div><b>Policy</b> <span class="hint">— induced pattern (L2).</span></div></li>
       <li><span class="gly cluster"></span> <div><b>Topic</b> <span class="hint">— DeepSeek-labelled cluster.</span></div></li>
       <li><span class="gly world"></span>   <div><b>World fact</b> <span class="hint">— stable environment fact.</span></div></li>
+      <li><span class="gly trace"></span>   <div><b>Memory</b> <span class="hint">— individual captured turn (toggle on).</span></div></li>
     </ul>
   </div>
 
@@ -371,7 +376,7 @@ function legendDotSVG(color, size = 12) {
 let DATA = null;
 let RAW = null;
 let activeProfile = "__ALL__";
-let kindEnabled = { skill: true, policy: true, cluster: true, world: true };
+let kindEnabled = { skill: true, policy: true, cluster: true, world: true, trace: false };
 let textQuery = "";
 let pinnedId = null;
 let simulation = null;
@@ -393,6 +398,7 @@ function radiusFor(n) {
   if (n.kind === "skill")   return 16;
   if (n.kind === "policy")  return 11;
   if (n.kind === "world")   return 12;
+  if (n.kind === "trace")   return 5;
   return 10;
 }
 
@@ -411,6 +417,7 @@ function buildGraph() {
   const wantPolicy  = kindEnabled.policy;
   const wantCluster = kindEnabled.cluster;
   const wantWorld   = kindEnabled.world;
+  const wantTrace   = kindEnabled.trace;
 
   // Cluster hubs from DATA.clusters (only those with labels)
   if (wantCluster && DATA.clusters) {
@@ -431,7 +438,7 @@ function buildGraph() {
   // Skills / Policies / World from DATA.nodes
   const filterAgent = (p) => activeProfile === "__ALL__" || p === activeProfile;
   for (const n of DATA.nodes) {
-    if (n.kind === "trace") continue;
+    if (n.kind === "trace" && !wantTrace) continue;
     if (n.kind === "skill" && !wantSkill) continue;
     if (n.kind === "policy" && !wantPolicy) continue;
     if (n.kind === "world" && !wantWorld) continue;
@@ -495,7 +502,7 @@ function buildGraph() {
   const connected = new Set();
   for (const l of links) { connected.add(l.source); connected.add(l.target); }
   const filtered = nodes.filter(n =>
-    n.kind === "skill" || n.kind === "cluster" || connected.has(n.id)
+    n.kind === "skill" || n.kind === "cluster" || n.kind === "trace" || connected.has(n.id)
   );
   const finalIds = new Set(filtered.map(n => n.id));
   const finalLinks = links.filter(l => finalIds.has(l.source) && finalIds.has(l.target));
@@ -760,15 +767,18 @@ function buildToggles() {
     { id: "policy",  label: "Policies", ct: counts.policy },
     { id: "cluster", label: "Topics",  ct: clusterCount },
     { id: "world",   label: "World facts", ct: counts.world },
+    { id: "trace",   label: "Memories",  ct: counts.trace || 0 },
   ];
   items.forEach(({ id, label, ct }) => {
     const lab = document.createElement("label");
+    const on = kindEnabled[id] !== false;
     lab.innerHTML = `
       <span class="gly ${id}"></span>
       <span>${label}</span>
       <span class="ct">${ct}</span>
-      <input type="checkbox" checked />
+      <input type="checkbox" ${on ? "checked" : ""} />
     `;
+    if (!on) lab.classList.add("off");
     const cb = lab.querySelector("input");
     cb.addEventListener("change", () => {
       kindEnabled[id] = cb.checked;
