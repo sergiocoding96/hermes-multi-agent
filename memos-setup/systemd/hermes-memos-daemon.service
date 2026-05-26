@@ -1,0 +1,20 @@
+[Unit]
+Description=Hermes v2 memos memory daemon (viewer + HTTP API) on 127.0.0.1:18800
+Documentation=file:///home/openclaw/Coding/Hermes/memos-setup/learnings/2026-05-26-capture-outage-rca-recovery.md
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/openclaw/.hermes/memos-plugin
+# linuxbrew node must be on PATH for the tsx loader + any child spawns
+Environment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/linuxbrew/.linuxbrew/bin/node /home/openclaw/.hermes/memos-plugin/node_modules/.bin/tsx /home/openclaw/.hermes/memos-plugin/bridge.cts --daemon --agent=hermes
+Restart=always
+RestartSec=10
+# First boot reflects any dirty episodes before binding :18800; give it room.
+TimeoutStartSec=600
+StandardOutput=append:/home/openclaw/.hermes/memos-plugin/logs/daemon-service.log
+StandardError=append:/home/openclaw/.hermes/memos-plugin/logs/daemon-service.log
+
+[Install]
+WantedBy=default.target

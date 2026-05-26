@@ -90,15 +90,33 @@
 
   // ── fetch interceptor ────────────────────────────────────────────────
   const origFetch = window.fetch.bind(window);
+  const pageIsHttps = location.protocol === "https:";
   window.fetch = function (input, init) {
-    if (!currentProfile) return origFetch(input, init);
-
     // Resolve URL safely whether it's a string, URL, or Request object.
     let urlStr = "";
     if (typeof input === "string") urlStr = input;
     else if (input instanceof URL) urlStr = input.toString();
     else if (input && typeof input.url === "string") urlStr = input.url;
 
+    // Mixed-content guard. The React bundle probes a sibling daemon at a
+    // hardcoded `http://<host>:<port>/api/v1/health` to offer a "switch
+    // daemon" link (wa={openclaw:18799,hermes:18800}). On this single-daemon,
+    // reverse-proxied HTTPS deployment that sibling port isn't reachable and
+    // the browser blocks the insecure request — logging a Mixed Content error
+    // on every 15s poll. Short-circuit any insecure http:// request from an
+    // https page by rejecting, so the bundle's own `catch { return null }`
+    // path runs silently. Same-origin app calls are relative ("/api/v1/…")
+    // and never match this.
+    if (pageIsHttps && urlStr.startsWith("http://")) {
+      return Promise.reject(
+        new DOMException(
+          "Blocked insecure cross-origin request (mixed content)",
+          "SecurityError",
+        ),
+      );
+    }
+
+    if (!currentProfile) return origFetch(input, init);
     if (!urlStr.includes("/api/v1/")) return origFetch(input, init);
     // Exclude auth endpoints — namespace override is meaningless there.
     if (urlStr.includes("/api/v1/auth/")) return origFetch(input, init);
@@ -168,11 +186,32 @@
     }
   }
 
+  // Public (non-session-gated) endpoint. Returns
+  // { enabled, needsSetup, authenticated }. We use it to avoid firing
+  // session-gated requests (e.g. /api/v1/diag/namespace) before the user
+  // has unlocked the viewer — which would otherwise log a 401 on load.
+  async function isAuthenticated() {
+    try {
+      const r = await origFetch("/api/v1/auth/status", { credentials: "include" });
+      if (!r.ok) return false;
+      const d = await r.json();
+      // If auth is disabled there's no lock screen; otherwise require unlock.
+      return d.enabled === false || d.authenticated === true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function mount() {
     if (document.getElementById("hermes-profile-switcher")) return;
     // Don't show on the login screen.
     if (document.querySelector('input[type="password"]')) {
       setTimeout(mount, 400);
+      return;
+    }
+    // Wait until the viewer is unlocked before hitting session-gated APIs.
+    if (!(await isAuthenticated())) {
+      setTimeout(mount, 800);
       return;
     }
     const profiles = await loadProfiles();
