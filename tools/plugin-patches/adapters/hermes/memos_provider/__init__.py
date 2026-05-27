@@ -64,7 +64,7 @@ if str(_PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(_PLUGIN_DIR))
 
 from bridge_client import BridgeError, MemosBridgeClient  # noqa: E402
-from daemon_manager import ensure_bridge_running  # noqa: E402
+from daemon_manager import ensure_bridge_running, bridge_boot_lock  # noqa: E402
 
 
 try:  # pragma: no cover — host-provided base class, absent in unit tests
@@ -1598,13 +1598,18 @@ class MemTensorProvider(MemoryProvider):
         if old_bridge:
             with contextlib.suppress(Exception):
                 old_bridge.close()
-        ensure_bridge_running()
-        self._bridge = MemosBridgeClient.get_or_create()
-        self._bridge.register_host_handler(
-            "host.llm.complete",
-            self._handle_host_llm_complete,
-        )
-        self._open_session(session_id, timeout=timeout)
+        # Serialize the cold-boot (spawn + session.open, where BGE-large loads)
+        # across all gateways so concurrent boots can't starve the CPU into the
+        # respawn/leak spiral. Reusing an already-warm bridge via get_or_create
+        # is fast, so the lock is only really held during a genuine boot.
+        with bridge_boot_lock(timeout=timeout + 30.0):
+            ensure_bridge_running()
+            self._bridge = MemosBridgeClient.get_or_create()
+            self._bridge.register_host_handler(
+                "host.llm.complete",
+                self._handle_host_llm_complete,
+            )
+            self._open_session(session_id, timeout=timeout)
 
     def _ensure_bridge(self, session_id: str = "", *, timeout: float = 120.0) -> bool:
         if self._bridge:
