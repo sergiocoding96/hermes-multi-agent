@@ -403,9 +403,9 @@
       <li><s>Background the boot-reflection</s> — <b>✓ done (P1.1, 2026-05-27)</b>: server starts immediately; reflection backfills async.</li>
     </ul></div>
     <div class="card"><h3>Learning quality</h3><ul>
-      <li><b>Per-step LLM verifier</b> → automatic finer-grained policy repairs.</li>
-      <li><b>Close the human-feedback loop</b> (implicit next-turn + 👍/👎).</li>
-      <li><b>Auto-prune</b> dead/unused skills as usage data accrues.</li>
+      <li><b>Feed tool-failures to auto-repair</b> + per-step LLM verifier → finer policy repairs (cross-layer: adapter→bridge RPC→core; scheduled, tested session).</li>
+      <li><b>Explicit 👍/👎 channel</b> (Discord reactions). <i>Note: the implicit next-turn signal is already covered by the LLM R_human judge — verified 2026-05-27.</i></li>
+      <li><s>Auto-prune dead skills</s> — <b>✓ done (P1.3)</b>; runs as usage data accrues.</li>
     </ul></div>
   </div>
   <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>24 / 25</span></div>

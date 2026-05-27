@@ -23,12 +23,22 @@ edit `docs/architecture/2026-05-27-memory-comprehensive-report-deck.html`, run
   on-demand stack is stopped. File: `tools/stress-test.sh`.
 
 ## Phase 2 — Close the feedback loop (medium)
-- **2.1 Auto per-step verifier** (M/Med) — on episode close, an LLM judge scores each step → writes
-  `feedback` rows via `feedback.submit` → `runRepair` makes failure-avoidance repairs. Route to
-  NVIDIA-free fallback (background). Files: `core/feedback/feedback.ts`, `core/capture/capture.ts`, `core/feedback/subscriber.ts`.
-- **2.2 Implicit next-turn human signal** (M/Med) — next user turn labels the prior agent turn
-  (correction/re-ask → negative; acceptance → positive) as a `UserFeedback` row, no extra LLM call.
-  Files: `core/capture/capture.ts`, `core/reward/human-scorer.ts`.
+**Investigation 2026-05-27 — the loop is more wired than first assumed; scope narrowed:**
+- **2.2 Implicit next-turn human signal — NOT NEEDED (verified).** `buildTaskSummary`
+  (`core/reward/task-summary.ts`) already pairs *every* user turn with the agent's reply and feeds
+  it to the LLM R_human judge (`scoreHuman`, `llmScoring:true`), which fires (68/102 episodes have
+  differentiated `r_task`). So the next-turn reaction (correction/acceptance/re-ask) already shapes
+  reward → value. A separate heuristic would be redundant and risk double-counting. Dropped.
+- **2.1 Per-step verifier / auto-repair — real but deeper than M; schedule a focused session.**
+  What already works: tool failures are captured into `error_signatures` (→ the P/#15 value
+  penalty), and the feedback subscriber **already auto-schedules `runRepair` on tool-failure
+  bursts** (`core/feedback/subscriber.ts recordToolFailure`). The gap: the gateway adapter's
+  `_on_post_tool_call` does **not** call `recordToolFailure`, and the subscriber isn't exposed over
+  the bridge RPC — so the auto-repair path is never fed. Wiring it (+ an optional episode-close LLM
+  judge writing `feedback` rows) is a **cross-layer change** (Python adapter → new `feedback.*`
+  bridge RPC → TS subscriber) touching the reward/feedback math. Deferred to a focused, tested
+  session (silent learning-corruption risk is exactly why). Files: `adapters/hermes/memos_provider/__init__.py`,
+  `bridge.cts` (RPC), `core/feedback/subscriber.ts`, `core/pipeline/memory-core.ts`.
 
 ## Phase 3 — Proper architecture (large; schedule deliberately)
 - **3.1 Shared single daemon** (L/Med-High) — expose capture/retrieval RPCs over the `:18800` daemon
