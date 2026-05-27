@@ -14,6 +14,29 @@
 #      traces.ts listTurnKeys+countTurns namespace-aware SQL)
 #   3. Bundled-viewer UI overlay (web/dist/index.html script tag,
 #      hermes-profile-switcher.js)
+#   4. Named-speaker memory summaries (core/capture/summarizer.ts MEMOS_HUMANS,
+#      bridge.cts dotenv loader) + skill packager default share-scope
+#      (core/skill/packager.ts).
+#
+# Patches added 2026-05-25 (bounded-capture-LLM / boot-hang prevention):
+#   5. Chunked batch reflection — core/capture/capture.ts splits a closed
+#      episode into ≤ batchThreshold-step batch calls (scoreBatchChunk) so an
+#      oversized single call can't return malformed JSON / time out and stall
+#      a cold bridge boot. Orphan-fallback summaries use the heuristic path
+#      (summarizer.ts heuristicOnly) to avoid one LLM call per orphan step.
+#   6. Per-step tool-call cap + maxTokens — core/capture/batch-scorer.ts bounds
+#      the per-step tool_calls array (capToolCalls, 24) and forwards a hard
+#      maxTokens ceiling on the batched-reflection response.
+#   7. Bridge keepalive / leak fix — adapters/hermes/memos_provider/__init__.py
+#      blocks 90s for a cold boot (was 10s, which respawned mid-boot and leaked
+#      node procs) and closes a failed/timed-out bridge subprocess before
+#      dropping the handle.
+#   Decision doc: memos-setup/learnings/2026-05-25-bounded-capture-llm-boot-hang.md
+#
+# NOTE: the `skillEvolver → NVIDIA integrate API` switch (2026-05-25) lives in
+#   the user's ~/.hermes/memos-plugin/config.yaml (it carries a secret API key,
+#   so it is intentionally NOT committed here). config.yaml is user data and is
+#   preserved across plugin reinstalls; backup at config.yaml.bak-skillevolver-2026-05-25.
 #
 # Run:    bash tools/postinstall-patches.sh
 # Verify: bash tools/postinstall-patches.sh --check     (read-only sanity)
@@ -45,10 +68,19 @@ FILES=(
   "core/storage/repos/traces.ts"
   "core/skill/packager.ts"
   "core/capture/summarizer.ts"
+  "core/capture/capture.ts"
+  "core/capture/batch-scorer.ts"
+  "adapters/hermes/memos_provider/__init__.py"
   "bridge.cts"
   "server/http.ts"
   "web/dist/index.html"
   "web/dist/hermes-profile-switcher.js"
+  "core/config/defaults.ts"
+  "core/reward/backprop.ts"
+  "core/llm/prompts/l2-induction.ts"
+  "core/memory/l2/induce.ts"
+  "core/memory/l2/types.ts"
+  "core/memory/l3/merge.ts"
 )
 
 # Sanity-check markers we expect to find in the patched versions.
@@ -61,11 +93,20 @@ declare -A MARKERS=(
   ["core/runtime/request-namespace.ts"]="runWithRequestNamespace"
   ["core/storage/repos/traces.ts"]="getRequestNamespace"
   ["core/skill/packager.ts"]="share: existing?.share ?? { scope: \"local\""
-  ["core/capture/summarizer.ts"]="MEMOS_HUMAN_NAME"
+  ["core/capture/summarizer.ts"]="heuristicOnly"
+  ["core/capture/capture.ts"]="scoreBatchChunk"
+  ["core/capture/batch-scorer.ts"]="capToolCalls"
+  ["adapters/hermes/memos_provider/__init__.py"]="Kill the failed/timed-out bridge subprocess"
   ["bridge.cts"]="loadDotEnv"
   ["server/http.ts"]="runWithRequestNamespace"
   ["web/dist/index.html"]="hermes-profile-switcher.js"
   ["web/dist/hermes-profile-switcher.js"]="X-As-Profile"
+  ["core/config/defaults.ts"]="minSupport: 3"
+  ["core/reward/backprop.ts"]="ERROR_OUTCOME_PENALTY"
+  ["core/llm/prompts/l2-induction.ts"]="failure_avoidance"
+  ["core/memory/l2/induce.ts"]="antiPatterns"
+  ["core/memory/l2/types.ts"]="antiPatterns?: string[]"
+  ["core/memory/l3/merge.ts"]="WM_SIM_MERGE_THRESHOLD"
 )
 
 missing=0
