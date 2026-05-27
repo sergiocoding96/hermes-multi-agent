@@ -627,7 +627,19 @@ export function createMemoryCore(
         .list({ status: "closed", limit: 500 })
         .filter((ep) => episodeRewardIsDirty(ep));
       if (dirtyClosed.length > 0) {
-        await recoverDirtyClosedEpisodes(dirtyClosed);
+        // Background the dirty-episode reflection so init() — and therefore the
+        // HTTP server / capture path — never blocks on it. One dirty episode's
+        // reflect took 154s, leaving :18800 unavailable during the worst cold
+        // boots (and starving concurrently-booting bridges). The reflection
+        // backfills reward/value after startup; capture serves immediately. The
+        // recover fn processes episodes sequentially → self-capped to one
+        // reflection at a time. (Phase 1.1, 2026-05-27.)
+        void recoverDirtyClosedEpisodes(dirtyClosed).catch((err) =>
+          log.warn("init.dirty_reflect.background_failed", {
+            err: err instanceof Error ? err.message : String(err),
+            count: dirtyClosed.length,
+          }),
+        );
       }
     } catch (err) {
       log.debug("init.orphan_scan.failed", {
