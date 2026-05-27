@@ -6,9 +6,11 @@
 set -u  # don't set -e — we want to keep going on minor failures
 PASS=0
 FAIL=0
+SKIP=0
 
 ok()   { echo "  ✅ $1"; PASS=$((PASS+1)); }
 fail() { echo "  ❌ $1"; FAIL=$((FAIL+1)); }
+skip() { echo "  ⏭️  $1"; SKIP=$((SKIP+1)); }
 
 echo "════════════════════════════════════════════════════════════════"
 echo " HERMES MEMORY SYSTEM STRESS TEST — $(date -Iseconds)"
@@ -167,8 +169,10 @@ fi
 # ───────────────────────── 9. web stack ─────────────────────────
 echo ""
 echo "▸ 9. Web stack (Firecrawl + SearXNG + Cloak)"
-curl -s --max-time 5 localhost:3002/ 2>/dev/null | grep -q "Firecrawl" && ok "Firecrawl responding (/)" || fail "Firecrawl not responding"
-curl -s --max-time 5 "localhost:8888/healthz" 2>/dev/null | head -c 50 | grep -qE "OK|200|searx" && ok "SearXNG healthy" || fail "SearXNG not responding"
+# Firecrawl + SearXNG are on-demand (idle-stopped by firecrawl-idle-monitor) — a
+# down service is EXPECTED, not a memory failure, so SKIP rather than FAIL.
+curl -s --max-time 5 localhost:3002/ 2>/dev/null | grep -q "Firecrawl" && ok "Firecrawl responding (/)" || skip "Firecrawl down (on-demand / idle-stopped — not a memory fault)"
+curl -s --max-time 5 "localhost:8888/healthz" 2>/dev/null | head -c 50 | grep -qE "OK|200|searx" && ok "SearXNG healthy" || skip "SearXNG down (on-demand / idle-stopped — not a memory fault)"
 curl -s --max-time 5 localhost:9378/health 2>/dev/null | grep -qE "ok|true|healthy" && ok "Cloak healthy" || fail "Cloak not responding"
 
 # ───────────────────────── 10. memory-stress: 5 sequential searches, each unique ─────────────────────────
@@ -193,6 +197,7 @@ echo " STRESS TEST SUMMARY"
 echo "════════════════════════════════════════════════════════════════"
 echo "   Passed: $PASS"
 echo "   Failed: $FAIL"
+echo "   Skipped: $SKIP (on-demand services down — not a memory fault)"
 total=$((PASS+FAIL))
-[ "$FAIL" = "0" ] && echo "   Status: ✅ ALL GREEN ($total/$total)" || echo "   Status: ❌ $FAIL/$total failing"
+[ "$FAIL" = "0" ] && echo "   Status: ✅ ALL GREEN ($PASS/$total$([ "$SKIP" -gt 0 ] && echo ", $SKIP skipped"))" || echo "   Status: ❌ $FAIL/$total failing"
 exit "$FAIL"
