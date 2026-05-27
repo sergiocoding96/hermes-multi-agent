@@ -606,12 +606,14 @@ def cmd_graph_export(args: argparse.Namespace) -> None:
     for r in con.execute("""
         SELECT id, owner_profile_id, share_scope, ts, episode_id,
                COALESCE(summary, '') AS text,
+               value, priority,
                vec_summary AS v
         FROM traces
     """):
         rows.append({"kind": "trace", "id": r["id"], "profile": r["owner_profile_id"],
                      "scope": r["share_scope"], "ts": r["ts"] or 0,
                      "episode_id": r["episode_id"], "text": r["text"], "v": vec_from_blob(r["v"]),
+                     "value": r["value"], "priority": r["priority"],
                      "status": None, "extra": {}})
 
     for r in con.execute("""
@@ -755,6 +757,8 @@ def cmd_graph_export(args: argparse.Namespace) -> None:
             "status": r["status"],
             "text": (r["text"] or "")[:240],
             "extra": r["extra"],
+            "value": (round(float(r["value"]), 3) if r.get("value") is not None else None),
+            "priority": (round(float(r["priority"]), 3) if r.get("priority") is not None else None),
             "cluster": cid,
             "crossAgent": bool(cross),
         })

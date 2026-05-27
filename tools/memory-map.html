@@ -207,6 +207,15 @@
   .detail .badge.kind-world   { background: var(--world-fill);   color: #78350f; border-color: var(--world-stroke); }
   .detail .badge.kind-trace   { background: var(--trace-fill);   color: #334155; border-color: var(--trace-stroke); }
   .detail .badge.cross { background: var(--accent); color: #ffffff; border-color: var(--accent); }
+  .detail ul.members { list-style: none; margin: 8px 0 4px; padding: 0; max-height: 240px;
+    overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+  .detail ul.members li { display: flex; gap: 7px; align-items: flex-start;
+    padding: 5px 7px; border-radius: 6px; background: var(--bg-soft); cursor: pointer;
+    font-size: 11px; line-height: 1.35; color: var(--text-mid); }
+  .detail ul.members li:hover { background: #e5e7eb; color: var(--text); }
+  .detail ul.members .mprof { flex: 0 0 8px; width: 8px; height: 8px; margin-top: 4px;
+    border-radius: 50%; }
+  .detail ul.members .mtxt { flex: 1; }
   .detail h2 {
     margin: 0 0 6px 0; font-size: 10px; font-weight: 600;
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
@@ -402,6 +411,19 @@ function radiusFor(n) {
   return 10;
 }
 
+// Reward heat: map a trace's value (≈ -1..1) to a diverging colour
+// red (negative) → grey (≈0) → green (positive). Used to fill Memory dots
+// so high/low-value memories are visible at a glance.
+function heatColor(v) {
+  const t = Math.max(-1, Math.min(1, typeof v === "number" ? v : 0));
+  const grey = [148, 163, 184];        // #94a3b8
+  const tgt  = t >= 0 ? [22, 163, 74]  // green  #16a34a
+                      : [220, 38, 38];  // red    #dc2626
+  const k = Math.abs(t);
+  const c = grey.map((g, i) => Math.round(g + (tgt[i] - g) * k));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
 function labelFor(n) {
   if (n.kind === "cluster") return shortenLabel(n.label, 22);
   if (n.kind === "skill")   return shortenLabel(n.name || n.id, 14);
@@ -456,6 +478,7 @@ function buildGraph() {
       text: n.text || "",
       extra: n.extra || {},
       crossAgent: n.crossAgent,
+      value: (typeof n.value === "number" ? n.value : null),
     });
   }
 
@@ -603,7 +626,9 @@ function render() {
     .attr("stroke", d => {
       if (d.kind === "cluster") return CLUSTER_BORDER;
       return COLORS[d.profile] || CLUSTER_BORDER;
-    });
+    })
+    // Reward heat on Memory dots: colour by value when present (else CSS kind-fill).
+    .style("fill", d => (d.kind === "trace" && d.value != null) ? heatColor(d.value) : null);
   nodeEnter.append("text")
     .attr("y", d => (d.kind === "policy") ? radiusFor(d) + 11 : 0)
     .text(d => labelFor(d))
@@ -666,6 +691,13 @@ function showDetail(n) {
   const el = document.getElementById("detail");
   el.classList.remove("empty");
   if (n.kind === "cluster") {
+    // Drill-down: list the member memories of this topic; click one to inspect it.
+    const cid = Number(String(n.id).split(":")[1]);
+    const members = DATA.nodes.filter(x => x.kind === "trace" && x.cluster === cid);
+    const shown = members.slice(0, 40);
+    const memHtml = shown.map((m, i) =>
+      `<li data-mi="${i}"><span class="mprof" style="background:${COLORS[m.profile] || '#888'}"></span>` +
+      `<span class="mtxt">${escapeHtml((m.text || "(no text)").slice(0, 160))}</span></li>`).join("");
     el.innerHTML = `
       <div class="badges">
         <span class="badge kind-cluster">Topic · L1 cluster</span>
@@ -673,9 +705,18 @@ function showDetail(n) {
         ${(n.profiles || []).map(p => `<span class="badge">${escapeHtml(p)}</span>`).join("")}
       </div>
       <div class="name">${escapeHtml(n.label)}</div>
-      <div class="text">${n.size} traces across ${(n.profiles || []).length} agent${(n.profiles || []).length === 1 ? "" : "s"}.</div>
-      <div class="lineage">↘ Cluster topic labelled by DeepSeek from member traces.</div>
+      <div class="text">${n.size} memories across ${(n.profiles || []).length} agent${(n.profiles || []).length === 1 ? "" : "s"}.${members.length ? ` Showing ${shown.length}${members.length > shown.length ? ` of ${members.length}` : ""} — click one to drill in.` : ""}</div>
+      ${members.length ? `<ul class="members">${memHtml}</ul>` : ""}
+      <div class="lineage">↘ Topic labelled by DeepSeek from member memories.</div>
     `;
+    el.querySelectorAll("ul.members li").forEach((li) => {
+      li.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const m = shown[Number(li.dataset.mi)];
+        showDetail({ id: m.id, kind: "trace", name: "", profile: m.profile,
+                     scope: m.scope, text: m.text, extra: m.extra || {}, crossAgent: m.crossAgent });
+      });
+    });
     return;
   }
   const kindBadge = `kind-${n.kind}`;
