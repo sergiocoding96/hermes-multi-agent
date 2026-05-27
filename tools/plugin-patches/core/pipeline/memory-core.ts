@@ -2041,6 +2041,16 @@ export function createMemoryCore(
         });
       }
 
+      // Record usage for skills actually surfaced into the prompt so
+      // usage_count reflects real retrieval. Previously only an explicit
+      // getSkill(recordUse:true) bumped it, leaving ~all skills at 0 and
+      // making the whole skill layer look dead. Best-effort; never blocks.
+      for (const h of hits) {
+        if (h.refKind === "skill" && h.refId) {
+          try { handle.repos.skills.recordUse(h.refId, Date.now()); } catch { /* non-fatal */ }
+        }
+      }
+
       return {
         query,
         hits,
