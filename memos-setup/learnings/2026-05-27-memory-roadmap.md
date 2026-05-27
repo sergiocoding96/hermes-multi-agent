@@ -41,7 +41,7 @@ edit `docs/architecture/2026-05-27-memory-comprehensive-report-deck.html`, run
   `bridge.cts` (RPC), `core/feedback/subscriber.ts`, `core/pipeline/memory-core.ts`.
 
 ## Phase 3 — Proper architecture (large; schedule deliberately)
-- **3.1 Shared single daemon** (L/Med-High) — expose capture/retrieval RPCs over the `:18800` daemon
+- **3.1 Shared single daemon** (L/Med-High) — **detailed spec: [`2026-05-27-p3.1-shared-daemon-spec.md`](2026-05-27-p3.1-shared-daemon-spec.md)**. — expose capture/retrieval RPCs over the `:18800` daemon
   HTTP API; convert the Python adapter from bridge-spawner to **HTTP client** of that one daemon.
   One model load total; per-gateway bridges retired. **Supersedes 1.2 and mostly 1.1.**
   Files: `server/http.ts`, `bridge.cts`, `adapters/hermes/memos_provider/*`, `daemon_manager.py`.
