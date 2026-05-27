@@ -365,7 +365,7 @@
   <div class="grid2">
     <div class="card"><h3>🟢 Stability</h3><ul>
       <li>:18800 daemon healthy &amp; under systemd (survives reboot).</li>
-      <li><b>Bridge cold-boots serialized</b> (cross-gateway flock, P1.2) — concurrent-boot spiral prevented even on a simultaneous all-gateway restart.</li>
+      <li><b>Phase 1 complete</b> — boots serialized (P1.2 flock, no spiral) + non-blocking (P1.1, server up ~13s); dead-skill auto-prune (P1.3) + green stress-test (P1.4).</li>
       <li>No bridge leak; capture is idempotent.</li>
       <li>All 8 gateways active; this session captures too.</li>
     </ul></div>
@@ -384,7 +384,7 @@
   <h2><span class="tag t-no">What doesn&rsquo;t (yet)</span></h2>
   <ul>
     <li><b>Per-gateway model loads remain</b> — boots are now serialized (P1.2 flock, so no spiral), but each gateway still loads its own BGE-large; the structural fix is the shared single daemon (Phase 3, P3.1).</li>
-    <li><b>Boot-reflection still blocks <span class="mono">server.started</span></b> — one dirty episode took 154s; first boot after a mess is slow.</li>
+    <li><b>Reflection can briefly blip HTTP responsiveness</b> — boot no longer blocks on it (P1.1: server starts in ~13s, reflection backgrounds), but Node is single-threaded so a heavy reflection burst can momentarily slow `:18800` (recovers to ~30ms). The full cure is a worker thread / the shared daemon (Phase 3).</li>
     <li><b>Per-step verifier feedback is dormant</b> — episode-level LLM judge works, but fine-grained step→repair only fires on explicit markers nobody sends.</li>
     <li><b>No human-in-the-loop signal</b> — reward is LLM-self-graded; no 👍/👎 channel.</li>
     <li><b>Web stack idle-stopped</b> — Firecrawl/SearXNG down on-demand (2/36 stress checks, unrelated to memory).</li>
@@ -400,7 +400,7 @@
     <div class="card"><h3>Architecture (highest leverage)</h3><ul>
       <li><s>Serialize bridge boots</s> — <b>✓ done (P1.2, 2026-05-27)</b>: cross-gateway flock, one model load at a time.</li>
       <li><b>Shared single daemon</b> — gateways become thin clients of :18800 instead of each loading BGE-large.</li>
-      <li><b>Background the boot-reflection</b> so it never blocks startup.</li>
+      <li><s>Background the boot-reflection</s> — <b>✓ done (P1.1, 2026-05-27)</b>: server starts immediately; reflection backfills async.</li>
     </ul></div>
     <div class="card"><h3>Learning quality</h3><ul>
       <li><b>Per-step LLM verifier</b> → automatic finer-grained policy repairs.</li>
