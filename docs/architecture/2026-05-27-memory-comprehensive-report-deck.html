@@ -365,7 +365,8 @@
   <div class="grid2">
     <div class="card"><h3>🟢 Stability</h3><ul>
       <li>:18800 daemon healthy &amp; under systemd (survives reboot).</li>
-      <li>No bridge leak under staggered start; capture is idempotent.</li>
+      <li><b>Bridge cold-boots serialized</b> (cross-gateway flock, P1.2) — concurrent-boot spiral prevented even on a simultaneous all-gateway restart.</li>
+      <li>No bridge leak; capture is idempotent.</li>
       <li>All 8 gateways active; this session captures too.</li>
     </ul></div>
     <div class="card"><h3>🟢 Memory &amp; viewer</h3><ul>
@@ -382,7 +383,7 @@
   <div class="kicker">Status</div>
   <h2><span class="tag t-no">What doesn&rsquo;t (yet)</span></h2>
   <ul>
-    <li><b>Bridge concurrency is mitigated, not solved</b> — each gateway still boots its own full BGE-large instance; under live load (esp. <span class="mono">sergio</span>) the spiral can recur and needs a staggered restart.</li>
+    <li><b>Per-gateway model loads remain</b> — boots are now serialized (P1.2 flock, so no spiral), but each gateway still loads its own BGE-large; the structural fix is the shared single daemon (Phase 3, P3.1).</li>
     <li><b>Boot-reflection still blocks <span class="mono">server.started</span></b> — one dirty episode took 154s; first boot after a mess is slow.</li>
     <li><b>Per-step verifier feedback is dormant</b> — episode-level LLM judge works, but fine-grained step→repair only fires on explicit markers nobody sends.</li>
     <li><b>No human-in-the-loop signal</b> — reward is LLM-self-graded; no 👍/👎 channel.</li>
@@ -397,7 +398,7 @@
   <h2><span class="tag t-next">What&rsquo;s left</span></h2>
   <div class="grid2">
     <div class="card"><h3>Architecture (highest leverage)</h3><ul>
-      <li><b>Serialize bridge boots</b> (cross-gateway lock) — one model load at a time.</li>
+      <li><s>Serialize bridge boots</s> — <b>✓ done (P1.2, 2026-05-27)</b>: cross-gateway flock, one model load at a time.</li>
       <li><b>Shared single daemon</b> — gateways become thin clients of :18800 instead of each loading BGE-large.</li>
       <li><b>Background the boot-reflection</b> so it never blocks startup.</li>
     </ul></div>
