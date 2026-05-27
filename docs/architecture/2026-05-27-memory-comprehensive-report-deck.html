@@ -1,0 +1,430 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Hermes Memory System — Comprehensive Report</title>
+<style>
+  @page { size: 1280px 720px; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root{
+    --ink:#0f2042; --mid:#334155; --dim:#64748b; --line:#e2e8f0;
+    --accent:#ff8c42; --blue:#0891b2; --green:#16a34a; --red:#dc2626; --violet:#7c3aed; --bg:#f8fafc;
+  }
+  html{font:16px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);}
+  .slide{width:1280px;height:720px;padding:52px 70px;position:relative;page-break-after:always;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;}
+  .slide:last-child{page-break-after:auto;}
+  .kicker{font:700 12px/1 inherit;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px;}
+  h1{font-size:38px;line-height:1.1;letter-spacing:-.01em;margin-bottom:12px;}
+  h2{font-size:27px;line-height:1.15;margin-bottom:16px;letter-spacing:-.01em;}
+  .sub{color:var(--dim);font-size:17px;}
+  ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-top:4px;}
+  li{position:relative;padding-left:24px;font-size:16.5px;color:var(--mid);}
+  li::before{content:"";position:absolute;left:3px;top:8px;width:8px;height:8px;border-radius:2px;background:var(--accent);}
+  li b{color:var(--ink);}
+  .foot{position:absolute;left:70px;right:70px;bottom:22px;display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:9px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px 34px;margin-top:4px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:11px;padding:17px 19px;}
+  .card h3{font-size:16px;margin-bottom:9px;}
+  .card ul{gap:6px;} .card li{font-size:14px;padding-left:20px;} .card li::before{top:6px;width:6px;height:6px;}
+  .tag{display:inline-block;font:700 10.5px/1 inherit;letter-spacing:.07em;text-transform:uppercase;padding:4px 9px;border-radius:999px;}
+  .t-ok{background:#dcfce7;color:#166534;} .t-no{background:#fee2e2;color:#991b1b;} .t-next{background:#fef3c7;color:#92400e;} .t-info{background:#e0f2fe;color:#075985;}
+  .stat .n{font-size:30px;font-weight:800;line-height:1;} .stat .l{font-size:12.5px;color:var(--dim);}
+  .statrow{display:flex;gap:36px;margin-top:14px;flex-wrap:wrap;}
+  .arrow{color:var(--accent);font-weight:800;}
+  .title-slide{background:linear-gradient(135deg,#0f2042 0%,#1e3a5f 55%,#7c3aed 150%);color:#fff;justify-content:center;}
+  .title-slide h1{font-size:50px;color:#fff;max-width:980px;} .title-slide .kicker{color:var(--accent);}
+  .title-slide .sub{color:#cbd5e1;font-size:19px;margin-top:8px;max-width:900px;}
+  .title-slide .meta{position:absolute;bottom:52px;left:70px;color:#94a3b8;font-size:13px;}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#eef2f7;padding:1px 5px;border-radius:4px;color:#0f2042;}
+  .lead{font-size:18px;color:var(--mid);max-width:1040px;margin-bottom:8px;}
+  .part{background:linear-gradient(135deg,#1e293b,#0f2042);color:#fff;justify-content:center;}
+  .part .kicker{color:var(--accent);} .part h1{color:#fff;font-size:46px;}
+  .part .sub{color:#cbd5e1;font-size:18px;margin-top:6px;}
+  table.dec{width:100%;border-collapse:collapse;margin-top:6px;font-size:14.5px;}
+  table.dec th,table.dec td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+  table.dec th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em;}
+  table.dec td.was{color:var(--red);} table.dec td.now{color:var(--green);}
+  .tl{display:flex;flex-direction:column;gap:7px;margin-top:6px;}
+  .tl .row{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:start;font-size:15px;}
+  .tl .d{font-weight:700;color:var(--accent);font-size:13.5px;padding-top:1px;}
+  .tl .e{color:var(--mid);} .tl .e b{color:var(--ink);}
+</style></head><body>
+
+<!-- 1 TITLE -->
+<section class="slide title-slide">
+  <div class="kicker">Hermes Multi-Agent · End-to-End</div>
+  <h1>The Memory System — Comprehensive Report</h1>
+  <div class="sub">Everything done on memory, April → May 2026: the multi-tier origins, the pivots, the single-tier overhaul, the plugin patches, the LLM saga, and the 2026-05-26/27 outage recovery &amp; quality overhaul — with current state and roadmap.</div>
+  <div class="meta">As of 2026-05-27 · supersedes the 2026-05-17 architecture brief (brings it current) · v2 <span class="mono" style="background:rgba(255,255,255,.12);color:#fff">@memtensor/memos-local-plugin</span></div>
+</section>
+
+<!-- 2 WHAT IT IS -->
+<section class="slide">
+  <div class="kicker">The system in one slide</div>
+  <h2>What the memory does &amp; how it&rsquo;s structured</h2>
+  <p class="lead">8 agents on one box, each with a private profile, sharing knowledge through one local memory plugin. Three layers, learned from experience and re-injected into every turn.</p>
+  <div class="grid2">
+    <div class="card"><h3>The layers</h3><ul>
+      <li><b>L1 · traces</b> — every turn captured (user+agent+tools), summarized, embedded.</li>
+      <li><b>L2 · policies</b> — induced &ldquo;when X, do Y&rdquo; patterns from clusters of traces.</li>
+      <li><b>L3 · skills + world-model</b> — crystallized callable procedures + durable environment facts.</li>
+    </ul></div>
+    <div class="card"><h3>The loop</h3><ul>
+      <li><b>Capture</b> → reflect/score → <b>reward</b> (LLM R_human + V backprop) → <b>induce</b> L2 → <b>crystallize</b> L3.</li>
+      <li><b>Retrieve</b> tier-1 skills + tier-2 policies + tier-3 traces, inject into the next prompt.</li>
+      <li><b>Isolation</b>: row-level <span class="mono">(owner_agent_kind, owner_profile_id, share_scope)</span> — no cubes, no API keys.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>2 / 25</span></div>
+</section>
+
+<!-- 3 TIMELINE -->
+<section class="slide">
+  <div class="kicker">The journey</div>
+  <h2>From multi-tier orchestration to a single hardened plugin</h2>
+  <div class="tl">
+    <div class="row"><div class="d">Apr 6–8</div><div class="e"><b>MemOS v1 stood up</b> (Qdrant + Neo4j + SQLite) under Paperclip/CEO orchestration; security audit + hardening.</div></div>
+    <div class="row"><div class="d">Apr 20–25</div><div class="e"><b>v2 migration plan</b> (server → local plugin); Sprint-2 gate; acceptance amended after audit.</div></div>
+    <div class="row"><div class="d">Apr 27–28</div><div class="e">Pivots: <b>v2 deprecated → revert to v1</b>, then <b>collapse the two-tier memory to a single tier</b>.</div></div>
+    <div class="row"><div class="d">May 16–17</div><div class="e"><b>The overhaul</b>: v2-only, single machine/tier/plugin; BGE-large embedder; share-scope policy; the orphan-cron root cause found &amp; killed.</div></div>
+    <div class="row"><div class="d">May 21</div><div class="e"><b>CTO agent</b> added on Claude Code (peer cross-agent, no central orchestrator); dirty-episode boot fix.</div></div>
+    <div class="row"><div class="d">May 24–25</div><div class="e">LLM saga: DeepSeek <b>402</b> → Gemini stopgap → DeepSeek revert; <b>bounded capture</b> fixes for the cold-boot hang.</div></div>
+    <div class="row"><div class="d">May 26–27</div><div class="e"><b>Capture outage</b> RCA + recovery, memory-quality audit, and 6 quality fixes (this report&rsquo;s second half).</div></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>3 / 25</span></div>
+</section>
+
+<!-- 4 PART I -->
+<section class="slide part">
+  <div class="kicker">Part I</div>
+  <h1>Foundations &amp; the road to v2</h1>
+  <div class="sub">Origins, the pivots, and the 2026-05-17 single-tier overhaul.</div>
+</section>
+
+<!-- 5 ORIGINS -->
+<section class="slide">
+  <div class="kicker">Phase 1 · origins</div>
+  <h2>The original multi-tier design (and why it was heavy)</h2>
+  <ul>
+    <li><b>Paperclip / CEO orchestration</b> — a central orchestrator routed work across agents and machines (&ldquo;CEO on Tower&rdquo;).</li>
+    <li><b>MemOS v1 server</b> — Qdrant (vectors) + Neo4j (graph) + SQLite, isolation via <b>per-cube API keys + URL</b>, sharing via <b>cross-cube replication</b> (untested).</li>
+    <li>Operationally heavy: multiple datastores, per-cube key management, multi-machine routing, a shared API key the audit worried about.</li>
+    <li>Extensive security audit + hardening (Apr 6–7): authorization, admin API, secret management, blind key audit.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>5 / 25</span></div>
+</section>
+
+<!-- 6 PIVOTS -->
+<section class="slide">
+  <div class="kicker">Phase 2 · the pivots</div>
+  <h2>Three course-corrections in two weeks</h2>
+  <ul>
+    <li><b>Apr 20–25</b> — planned migration from the MemOS <b>server</b> (Product 1) to the <b>local plugin</b> (Product 2); Sprint-2 gate probes; acceptance criteria amended after audit triage.</li>
+    <li><b>Apr 27</b> — <b>v2 deprecated, revert to v1</b>: the early v2 plugin lacked operational tooling, so the audit sent us back to v1.</li>
+    <li><b>Apr 28</b> — <b>collapse two-tier → single-tier</b>: drop the layered server+plugin split; commit to one MemOS tier.</li>
+    <li><b>Apr 22</b> — hedged with a <b>memory-alternatives scoping</b> pass in case Product 2 didn&rsquo;t pan out.</li>
+    <li>Net: complexity was the enemy. Every pivot pushed toward <b>fewer moving parts</b>.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>6 / 25</span></div>
+</section>
+
+<!-- 7 OVERHAUL DECISIONS -->
+<section class="slide">
+  <div class="kicker">Phase 3 · the 2026-05-17 overhaul</div>
+  <h2>One machine, one tier, one plugin</h2>
+  <table class="dec">
+    <tr><th>Decision</th><th>Before (v1 / multi-tier)</th><th>After (v2-only)</th></tr>
+    <tr><td><b>Backend</b></td><td class="was">Qdrant + Neo4j + SQLite server</td><td class="now">Single SQLite + local ONNX, one daemon :18800</td></tr>
+    <tr><td><b>Isolation</b></td><td class="was">Per-cube API keys + URL</td><td class="now">Row-level <span class="mono">(agent_kind, profile_id, share_scope)</span></td></tr>
+    <tr><td><b>Sharing</b></td><td class="was">Cross-cube replication (untested)</td><td class="now"><span class="mono">share_scope=local</span> rows visible across profiles, in-process</td></tr>
+    <tr><td><b>Orchestration</b></td><td class="was">Paperclip / CEO, multi-machine</td><td class="now">None — agents share via memory layers only</td></tr>
+  </table>
+  <p class="sub" style="margin-top:14px">The April audit flagged v2 for missing tooling — so we <b>built the tooling</b> (cross-agent inspector, forensic-audit triggers, per-agent viewer, stress test) and shipped v2 in place. Paperclip/CEO + the v1 server were retired (kept on disk for rollback).</p>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>7 / 25</span></div>
+</section>
+
+<!-- 8 EMBEDDER -->
+<section class="slide">
+  <div class="kicker">The overhaul · embedder</div>
+  <h2>Embedder finally fixed: BGE-large</h2>
+  <ul>
+    <li>Chose <span class="mono">Xenova/bge-large-en-v1.5</span> — <b>1024-dim, local ONNX</b> via Transformers.js (no API, no cost, no rate limit).</li>
+    <li>Picked after a <b>3-way benchmark</b> on real content vs MiniLM (smaller/weaker) and gemini-embedding-2 (cloud, adds latency + cost + a query prefix quirk).</li>
+    <li>Local embedding is also what makes <b>bridge cold-boots heavy</b> (~2 cores to load) — a tradeoff that resurfaces in Part III.</li>
+  </ul>
+  <div class="statrow">
+    <div class="stat"><div class="n">1024</div><div class="l">dimensions</div></div>
+    <div class="stat"><div class="n">$0</div><div class="l">per-embedding cost (local)</div></div>
+    <div class="stat"><div class="n">3-way</div><div class="l">benchmark before commit</div></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>8 / 25</span></div>
+</section>
+
+<!-- 9 SHARING POLICY -->
+<section class="slide">
+  <div class="kicker">The overhaul · sharing</div>
+  <h2>Private experience, shared knowledge</h2>
+  <table class="dec">
+    <tr><th>Table</th><th>scope</th><th>Why</th></tr>
+    <tr><td>traces</td><td>private</td><td>Each agent sees only its own turn-by-turn captures</td></tr>
+    <tr><td>episodes</td><td>private</td><td>Session boundaries are agent-local context</td></tr>
+    <tr><td>policies</td><td>private</td><td>L2 candidate patterns are local experiments</td></tr>
+    <tr><td>world_model</td><td class="now">local</td><td>Environment + operator facts help every agent</td></tr>
+    <tr><td>skills</td><td class="now">local</td><td>Crystallized procedures are the team&rsquo;s shared know-how (attribution per row)</td></tr>
+  </table>
+  <p class="sub" style="margin-top:12px"><b>Visibility rule:</b> a row is visible IFF <span class="mono">share_scope ∈ {local, public, hub}</span> OR it matches the caller&rsquo;s namespace — enforced at <b>every retrieval</b>, not by trust. Per-row attribution is automatic.</p>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>9 / 25</span></div>
+</section>
+
+<!-- 10 ORPHAN CRON -->
+<section class="slide">
+  <div class="kicker">The overhaul · the bug that looked like the plugin</div>
+  <h2>The orphan cron: every 15 min, privacy leaked</h2>
+  <ul>
+    <li><b>Symptom</b>: <span class="mono">share_scope</span> kept flipping <span class="mono">private → local</span> on its own — looked like a plugin bug.</li>
+    <li><b>Root cause</b>: a <b>cron job every 15 min</b> ran <span class="mono">promote-memos-shares.py</span> — writing <span class="mono">local</span> to <b>every row directly via the SQLite CLI</b>, bypassing the plugin&rsquo;s namespace filter entirely.</li>
+    <li>It lived in an <b>orphan Claude worktree</b> and was Sprint-3 scaffolding so the (now-retired) Paperclip/CEO orchestrator could read across cubes. We retired Paperclip 5 days earlier — the cron lived on.</li>
+    <li><b>Fix</b>: disabled in crontab (with rationale, not deleted). <b>Forensic-audit triggers</b> remain installed as a tripwire for re-emergence.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>10 / 25</span></div>
+</section>
+
+<!-- 11 PATCHES -->
+<section class="slide">
+  <div class="kicker">The overhaul · plugin patches</div>
+  <h2>The bundled plugin has no repo — so our changes are tracked patches</h2>
+  <p class="lead">Patches live in <span class="mono">tools/plugin-patches/</span>, re-applied by <span class="mono">postinstall-patches.sh</span> after any reinstall; <span class="mono">--check</span> verifies markers. Grew 13 → <b>22</b> this session.</p>
+  <div class="grid2">
+    <div class="card"><h3>Foundational (05-17 → 05-25)</h3><ul>
+      <li>Shared-skill attribution (&ldquo;learned by &lt;profile&gt;&rdquo;).</li>
+      <li>Per-request &ldquo;view as &lt;profile&gt;&rdquo; override + viewer overlay.</li>
+      <li>Skill packager defaults to <span class="mono">local</span> share.</li>
+      <li>Named-speaker memory summaries (multi-human).</li>
+      <li>Chunked batch reflection + tool-call cap + bridge keepalive 10→90s (boot-hang).</li>
+    </ul></div>
+    <div class="card"><h3>This session (05-26/27)</h3><ul>
+      <li>Bridge <span class="mono">session.open</span> timeout 30→120s.</li>
+      <li>Failure-avoidance L2 induction + anti-patterns.</li>
+      <li>World-model embedding-merge (dedup).</li>
+      <li>Outcome-penalty reward (error_signatures → V).</li>
+      <li>Crystallization bar + usage tracking.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>11 / 25</span></div>
+</section>
+
+<!-- 12 PART II -->
+<section class="slide part">
+  <div class="kicker">Part II</div>
+  <h1>The LLM &amp; capture-pipeline saga</h1>
+  <div class="sub">Providers, the boot-hang, and the CTO agent (May 21–25).</div>
+</section>
+
+<!-- 13 LLM PROVIDERS -->
+<section class="slide">
+  <div class="kicker">Models</div>
+  <h2>Who scores, summarizes, and crystallizes</h2>
+  <table class="dec">
+    <tr><th>Role</th><th>Model (today)</th><th>History</th></tr>
+    <tr><td><b>Embedder</b></td><td>BGE-large (local ONNX)</td><td>Stable since 05-17</td></tr>
+    <tr><td><b>Extraction / summary / R_human judge</b></td><td>DeepSeek V3 <span class="mono">deepseek-chat</span></td><td class="was">DeepSeek → Gemini (402 on 05-24) → DeepSeek (refunded, 05-25)</td></tr>
+    <tr><td><b>Skill crystallization / L2 induction</b></td><td>DeepSeek-R1 <span class="mono">deepseek-reasoner</span></td><td class="was">MiniMax M2.7 → NVIDIA (throttled) → DeepSeek-R1</td></tr>
+  </table>
+  <p class="sub" style="margin-top:14px"><b>Why DeepSeek</b>: non-thinking (no <span class="mono">&lt;think&gt;</span> pollution), no free-tier RPM throttle — the bursty capture load needs that. Gemini was a stopgap while DeepSeek was at $0; NVIDIA-free remains a candidate <b>failover</b> for background jobs.</p>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>13 / 25</span></div>
+</section>
+
+<!-- 14 BOOT-HANG + CTO -->
+<section class="slide">
+  <div class="kicker">May 21–25</div>
+  <h2>The cold-boot hang &amp; the CTO agent</h2>
+  <div class="grid2">
+    <div class="card"><h3>Bounded capture (05-25)</h3><ul>
+      <li>Cold boot re-reflected &ldquo;dirty&rdquo; episodes, firing many/huge LLM calls → <span class="mono">malformed</span>/timeout → boot stalls.</li>
+      <li>Fix: <b>chunk reflection</b> into ≤N-step calls, <b>cap tool_calls at 24</b> + hard maxTokens, heuristic orphan summaries (no LLM).</li>
+      <li>Bridge keepalive 10→90s + close-on-failed-boot to stop process leaks.</li>
+    </ul></div>
+    <div class="card"><h3>CTO agent (05-21)</h3><ul>
+      <li>A standalone CTO persona on <b>Claude Code</b> (not Hermes), wired to the v2 plugin as a <span class="mono">cto</span> profile.</li>
+      <li>Re-introduced <b>peer</b> cross-agent interaction — but <b>no central orchestrator, no cross-machine routing</b>.</li>
+      <li>This very session also runs as a captured <span class="mono">claude-code</span> profile.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>14 / 25</span></div>
+</section>
+
+<!-- 15 PART III -->
+<section class="slide part">
+  <div class="kicker">Part III</div>
+  <h1>The 2026-05-26/27 session</h1>
+  <div class="sub">Outage recovery, memory-quality audit, and 6 quality fixes.</div>
+</section>
+
+<!-- 16 ALARM -->
+<section class="slide">
+  <div class="kicker">The alarm</div>
+  <h2>&ldquo;Memory has reset — I lost the last 3 weeks&rdquo;</h2>
+  <div class="grid2">
+    <div class="card"><h3>What it looked like</h3><ul>
+      <li>Viewer nearly empty; overview counts &ldquo;—&rdquo;.</li>
+      <li>3D map = a sea of &ldquo;Empty turn sequences&rdquo;.</li>
+      <li>Recent days seemed gone.</li>
+    </ul></div>
+    <div class="card"><h3>What was true</h3><ul>
+      <li><b>Nothing deleted</b> — 95k rows on disk throughout.</li>
+      <li>The v2 store was <b>born 2026-05-12</b>; no pre-05-12 history ever lived in it.</li>
+      <li><b>Capture had stalled</b>; the map was a <b>stale snapshot</b> of mostly-duplicate junk.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>16 / 25</span></div>
+</section>
+
+<!-- 17 ROOT CAUSES -->
+<section class="slide">
+  <div class="kicker">Two root causes</div>
+  <h2>A re-insert loop and a CPU death-spiral</h2>
+  <div class="grid2">
+    <div class="card"><h3>#1 Runaway re-insert</h3><ul>
+      <li><b>65,741 rows for 6 real turns</b> (two turns ×33,840 / ×31,318).</li>
+      <li>Cause: <span class="mono">subagent.record</span> timed out at 30s → each retry <b>re-inserted with no idempotency</b>.</li>
+      <li>Cost was DB bloat, <b>not money</b> — ≈ $0.0115 / 30 LLM calls.</li>
+    </ul></div>
+    <div class="card"><h3>#2 Bridge cold-boot spiral</h3><ul>
+      <li>Each gateway bridge loads BGE-large (~2 cores); concurrent boots <b>starve the CPU</b> past the 30s timeout.</li>
+      <li>Timeout → respawn → more loads → <b>29 leaked processes</b>.</li>
+      <li>Band-aid scripts ran <span class="mono">pkill -f 'bridge.cts'</span> — also killing the :18800 daemon.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>17 / 25</span></div>
+</section>
+
+<!-- 18 RECOVERY + STABILITY -->
+<section class="slide">
+  <div class="kicker">Recovery &amp; durable stability fixes</div>
+  <h2>Stabilize → clean → harden</h2>
+  <div class="statrow">
+    <div class="stat"><div class="n">95,174<span class="arrow"> → </span>324</div><div class="l">traces (28k+ dup re-inserts removed)</div></div>
+    <div class="stat"><div class="n">1.8 GB<span class="arrow"> → </span>566 MB</div><div class="l">after VACUUM</div></div>
+    <div class="stat"><div class="n">7.9<span class="arrow"> → </span>0.5</div><div class="l">system load</div></div>
+  </div>
+  <ul style="margin-top:18px">
+    <li><b>Idempotency guard</b> — a BEFORE INSERT trigger drops a duplicate <span class="mono">(episode_id, turn_id)</span>; an episode can no longer re-inflate.</li>
+    <li><b>Raised bridge timeouts</b> (30→120s) + a <b>safe-cleanup library</b> replacing the dangerous <span class="mono">pkill</span> band-aids.</li>
+    <li><b>:18800 daemon → systemd unit</b> (Restart=always, enabled) — was a fragile manual SSH-session process.</li>
+    <li>Consistent backup first; FTS rebuilt; integrity OK; staggered restarts.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>18 / 25</span></div>
+</section>
+
+<!-- 19 VIEWER -->
+<section class="slide">
+  <div class="kicker">Viewer</div>
+  <h2>Login, console &amp; the 3D map</h2>
+  <div class="grid2">
+    <div class="card"><h3>Fixed</h3><ul>
+      <li><b>Login</b> — nginx mis-routed <span class="mono">/api/v1/auth/login</span> to the dashboard; added a specific <span class="mono">/api/v1/ → :18800</span> rule.</li>
+      <li><b>Console</b> — mixed-content guard + auth gate before <span class="mono">/diag/namespace</span>.</li>
+    </ul></div>
+    <div class="card"><h3>New on the map</h3><ul>
+      <li><b>Memories toggle</b> — plot individual memory dots.</li>
+      <li><b>Reward-heat</b> — colour by learned value (red→grey→green).</li>
+      <li><b>Bubble drill-down</b> — Topic → member memories → detail.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>19 / 25</span></div>
+</section>
+
+<!-- 20 QUALITY AUDIT -->
+<section class="slide">
+  <div class="kicker">Memory-quality audit</div>
+  <h2>What the data looked like underneath</h2>
+  <ul>
+    <li><b>Traces</b>: summaries good &amp; speaker-attributed; ~15–25% was test/trivial noise (pruned).</li>
+    <li><b>Skills</b>: 41, only <b>4 invocations</b> — crystallized too eagerly, hyper-specific, never re-matched.</li>
+    <li><b>Policies</b>: <b>155 success : 1 failure</b>; confidence pinned at the 0.5 default.</li>
+    <li><b>World-model</b>: near-duplicates, under-populated.</li>
+    <li><b>Reward</b>: the LLM judge <b>is</b> firing — 68/102 episodes have differentiated <span class="mono">r_task</span> (−0.75…0.82) — but objective tool-failure signals were unused.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>20 / 25</span></div>
+</section>
+
+<!-- 21 QUALITY FIXES -->
+<section class="slide">
+  <div class="kicker">Quality fixes shipped</div>
+  <h2>Make the memory learn better</h2>
+  <ul>
+    <li><b>Failure-avoidance induction</b> — L2 prompt classifies success vs failure from trace outcomes + emits anti-patterns. Fixes the 155:1 imbalance.</li>
+    <li><b>World-model embedding-merge</b> — semantically-identical facts merge (cosine ≥ 0.86) instead of duplicating.</li>
+    <li><b>Outcome reward penalty</b> — tool-error steps score −0.35 below neutral, so failures rank low + seed avoid-policies.</li>
+    <li><b>Crystallization bar + usage tracking</b> — a pattern must recur ≥3 episodes (was 1) to become a skill; usage now recorded on retrieval (verified 2→8).</li>
+    <li>Pruned test-artifact memories, dead/duplicate skills, and a duplicate world-model.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>21 / 25</span></div>
+</section>
+
+<!-- 22 WHAT WORKS -->
+<section class="slide">
+  <div class="kicker">Status</div>
+  <h2><span class="tag t-ok">What works</span></h2>
+  <div class="grid2">
+    <div class="card"><h3>🟢 Stability</h3><ul>
+      <li>:18800 daemon healthy &amp; under systemd (survives reboot).</li>
+      <li>No bridge leak under staggered start; capture is idempotent.</li>
+      <li>All 8 gateways active; this session captures too.</li>
+    </ul></div>
+    <div class="card"><h3>🟢 Memory &amp; viewer</h3><ul>
+      <li>DB clean (324 traces), FTS in sync, integrity OK.</li>
+      <li>LLM reward judge firing → differentiated value.</li>
+      <li>Viewer login + map heat/drill-down; graph auto-refresh succeeds again.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>22 / 25</span></div>
+</section>
+
+<!-- 23 WHAT DOESN'T -->
+<section class="slide">
+  <div class="kicker">Status</div>
+  <h2><span class="tag t-no">What doesn&rsquo;t (yet)</span></h2>
+  <ul>
+    <li><b>Bridge concurrency is mitigated, not solved</b> — each gateway still boots its own full BGE-large instance; under live load (esp. <span class="mono">sergio</span>) the spiral can recur and needs a staggered restart.</li>
+    <li><b>Boot-reflection still blocks <span class="mono">server.started</span></b> — one dirty episode took 154s; first boot after a mess is slow.</li>
+    <li><b>Per-step verifier feedback is dormant</b> — episode-level LLM judge works, but fine-grained step→repair only fires on explicit markers nobody sends.</li>
+    <li><b>No human-in-the-loop signal</b> — reward is LLM-self-graded; no 👍/👎 channel.</li>
+    <li><b>Web stack idle-stopped</b> — Firecrawl/SearXNG down on-demand (2/36 stress checks, unrelated to memory).</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>23 / 25</span></div>
+</section>
+
+<!-- 24 ROADMAP -->
+<section class="slide">
+  <div class="kicker">Roadmap</div>
+  <h2><span class="tag t-next">What&rsquo;s left</span></h2>
+  <div class="grid2">
+    <div class="card"><h3>Architecture (highest leverage)</h3><ul>
+      <li><b>Serialize bridge boots</b> (cross-gateway lock) — one model load at a time.</li>
+      <li><b>Shared single daemon</b> — gateways become thin clients of :18800 instead of each loading BGE-large.</li>
+      <li><b>Background the boot-reflection</b> so it never blocks startup.</li>
+    </ul></div>
+    <div class="card"><h3>Learning quality</h3><ul>
+      <li><b>Per-step LLM verifier</b> → automatic finer-grained policy repairs.</li>
+      <li><b>Close the human-feedback loop</b> (implicit next-turn + 👍/👎).</li>
+      <li><b>Auto-prune</b> dead/unused skills as usage data accrues.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Comprehensive Report</span><span>24 / 25</span></div>
+</section>
+
+<!-- 25 FINAL -->
+<section class="slide" style="background:linear-gradient(135deg,#0f2042,#1e3a5f);color:#fff;">
+  <div class="kicker" style="color:var(--accent)">Bottom line</div>
+  <h2 style="color:#fff">From a fragile multi-tier stack to a clean, hardened, self-improving memory</h2>
+  <div class="statrow">
+    <div class="stat"><div class="n" style="color:#4ade80">1</div><div class="l" style="color:#cbd5e1">machine / tier / plugin</div></div>
+    <div class="stat"><div class="n" style="color:#fff">22</div><div class="l" style="color:#cbd5e1">tracked plugin patches</div></div>
+    <div class="stat"><div class="n" style="color:#fff">324</div><div class="l" style="color:#cbd5e1">clean memories (FTS in sync)</div></div>
+    <div class="stat"><div class="n" style="color:#4ade80">200</div><div class="l" style="color:#cbd5e1">:18800 health · daemon enabled</div></div>
+  </div>
+  <ul style="margin-top:22px">
+    <li style="color:#e2e8f0">Decision docs: <span class="mono" style="background:rgba(255,255,255,.12);color:#fff">memos-setup/learnings/</span> (Apr 6 → May 26) · architecture briefs in <span class="mono" style="background:rgba(255,255,255,.12);color:#fff">docs/architecture/</span>.</li>
+    <li style="color:#e2e8f0">Next priority: the architecture items (serialize boots / shared daemon) to make stability structural.</li>
+  </ul>
+  <div class="foot" style="color:#94a3b8;border-color:rgba(255,255,255,.15)"><span>Hermes Memory — Comprehensive Report · 2026-05-27</span><span>25 / 25</span></div>
+</section>
+
+</body></html>
