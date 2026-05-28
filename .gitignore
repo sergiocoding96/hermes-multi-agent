@@ -1,7 +1,13 @@
 # *.pdf — now included
 node_modules/
 .tools/
-tools/
+# tools/ is tracked. Generated data + screenshots are ignored below.
+tools/memory-graph.json
+tools/vec-map.json
+tools/vec-map-3d.json
+tools/vec-map.png
+tools/vec-map-3d.png
+tools/screenshots/
 screenpipe-build.log
 .memos/
 .claude/
@@ -20,3 +26,18 @@ agents-auth.json.*
 __pycache__/
 *.pyc
 *.pyo
+
+# MCP tool scratch (playwright session logs / page snapshots)
+.playwright-mcp/
+
+# Repo-root test artefacts (Playwright screenshot diffs, perf-audit JSON dumps).
+# These are local; reproduce with the scripts in tools/.
+/viewer-*.png
+/memory-map-test-*.png
+/umap-*.png
+/umap3d-*.png
+/ui-*.png
+/perf-audit-results-*.json
+
+# Node modules anywhere in nested test workspaces
+**/node_modules/

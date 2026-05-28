@@ -1,0 +1,75 @@
+{
+  "startedAt": "2026-04-21T20:35:23.356Z",
+  "marker": "PERF-AUDIT-1776803723356",
+  "steps": [
+    {
+      "step": "ping",
+      "ms": 1.7
+    },
+    {
+      "step": "concurrent_N1",
+      "name": "c1",
+      "n": 3,
+      "p50": 69,
+      "p95": 70.6,
+      "p99": 70.6,
+      "min": 1.2,
+      "max": 70.6,
+      "mean": 46.9,
+      "totalMs": 140.8,
+      "throughputOps": 21.3
+    },
+    {
+      "step": "concurrent_N5",
+      "name": "c5",
+      "n": 15,
+      "p50": 50.6,
+      "p95": 89.2,
+      "p99": 89.2,
+      "min": 41.9,
+      "max": 89.2,
+      "mean": 58.1,
+      "totalMs": 182.5,
+      "throughputOps": 82.2
+    },
+    {
+      "step": "concurrent_N10",
+      "name": "c10",
+      "n": 30,
+      "p50": 45,
+      "p95": 76.7,
+      "p99": 76.8,
+      "min": 35.9,
+      "max": 76.8,
+      "mean": 51.8,
+      "totalMs": 159.6,
+      "throughputOps": 187.95
+    },
+    {
+      "step": "concurrent_N25",
+      "name": "c25",
+      "n": 75,
+      "p50": 47.5,
+      "p95": 113.3,
+      "p99": 113.8,
+      "min": 16.7,
+      "max": 113.8,
+      "mean": 57.5,
+      "totalMs": 174.8,
+      "throughputOps": 428.96
+    },
+    {
+      "step": "concurrent_N50",
+      "name": "c50",
+      "n": 150,
+      "p50": 43.8,
+      "p95": 86.1,
+      "p99": 86.3,
+      "min": 36.1,
+      "max": 86.5,
+      "mean": 55.6,
+      "totalMs": 168.7,
+      "throughputOps": 889
+    }
+  ]
+}

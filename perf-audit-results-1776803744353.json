@@ -1,0 +1,38 @@
+{
+  "startedAt": "2026-04-21T20:35:32.925Z",
+  "marker": "PERF-AUDIT-1776803732925",
+  "steps": [
+    {
+      "step": "ping",
+      "ms": 123.2
+    },
+    {
+      "step": "recent_probe",
+      "sampleCount": 1
+    },
+    {
+      "step": "search_keyword",
+      "name": "kw",
+      "n": 20,
+      "p50": 138.6,
+      "p95": 278,
+      "p99": 278,
+      "min": 81.5,
+      "max": 278,
+      "mean": 147.1,
+      "avgHits": 10
+    },
+    {
+      "step": "search_semantic",
+      "name": "sem",
+      "n": 50,
+      "p50": 158.7,
+      "p95": 272.9,
+      "p99": 328.9,
+      "min": 86.5,
+      "max": 328.9,
+      "mean": 165.8,
+      "avgHits": 10
+    }
+  ]
+}

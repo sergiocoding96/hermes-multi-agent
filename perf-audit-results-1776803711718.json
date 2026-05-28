@@ -1,0 +1,25 @@
+{
+  "startedAt": "2026-04-21T20:35:10.614Z",
+  "marker": "PERF-AUDIT-1776803710",
+  "steps": [
+    {
+      "step": "ping",
+      "ms": 2.9
+    },
+    {
+      "step": "capture_cold",
+      "ms": 5.9
+    },
+    {
+      "step": "capture_warm_sequential_n100",
+      "name": "cap_seq",
+      "n": 100,
+      "p50": 1.9,
+      "p95": 34.3,
+      "p99": 156.3,
+      "min": 0.4,
+      "max": 156.3,
+      "mean": 10.8
+    }
+  ]
+}
