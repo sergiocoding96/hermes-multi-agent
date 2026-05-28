@@ -399,7 +399,7 @@
   <div class="grid2">
     <div class="card"><h3>Architecture (highest leverage)</h3><ul>
       <li><s>Serialize bridge boots</s> — <b>✓ done (P1.2, 2026-05-27)</b>: cross-gateway flock, one model load at a time.</li>
-      <li><b>Shared single daemon</b> — gateways become thin clients of :18800 instead of each loading BGE-large.</li>
+      <li><b>Shared single daemon</b> — gateways become thin clients of :18800 instead of each loading BGE-large. <b>In progress (P3.1, 2026-05-27):</b> daemon-side capture-write HTTP routes landed (<code>POST /api/v1/turn/start|end</code>, per-request <code>X-As-Profile</code> namespace, verified isolation); remaining = per-boot adapter token + HTTP-client transport cutover behind <code>MEMOS_TRANSPORT</code>.</li>
       <li><s>Background the boot-reflection</s> — <b>✓ done (P1.1, 2026-05-27)</b>: server starts immediately; reflection backfills async.</li>
     </ul></div>
     <div class="card"><h3>Learning quality</h3><ul>

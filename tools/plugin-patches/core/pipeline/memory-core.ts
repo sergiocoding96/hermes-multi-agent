@@ -493,7 +493,13 @@ export function createMemoryCore(
     agent: AgentKind,
     input?: { namespace?: RuntimeNamespace; contextHints?: Record<string, unknown>; meta?: Record<string, unknown> },
   ): RuntimeNamespace {
-    return namespaceFromHints(agent, input?.contextHints ?? input?.meta, input?.namespace ?? activeNamespace);
+    // Fall back to `effectiveNamespace()` (not bare `activeNamespace`) so the
+    // HTTP capture write path honors the per-request `X-As-Profile` namespace
+    // (P3.1 — shared single daemon serving all profiles). Outside an HTTP
+    // request `getRequestNamespace()` is undefined, so this resolves to
+    // `activeNamespace` exactly as before — backward-compatible for the stdio
+    // bridge. An explicit `input.namespace` still wins over both.
+    return namespaceFromHints(agent, input?.contextHints ?? input?.meta, input?.namespace ?? effectiveNamespace());
   }
 
   function withNamespaceMeta(
