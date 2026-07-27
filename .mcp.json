@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "hermes-memory": {
+      "command": "/home/openclaw/Coding/Hermes-CTO/.venv/bin/python",
+      "args": ["/home/openclaw/Coding/Hermes-CTO/mcp/cto_memory_mcp.py"],
+      "env": {
+        "CTO_MEM_PORT": "18811",
+        "CTO_PROFILE_ID": "claude-code"
+      }
+    }
+  }
+}

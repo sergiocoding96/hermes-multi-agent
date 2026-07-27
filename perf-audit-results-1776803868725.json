@@ -1,0 +1,15 @@
+{
+  "startedAt": "2026-04-21T20:37:32.310Z",
+  "marker": "PERF-AUDIT-1776803852310",
+  "steps": [
+    {
+      "step": "ping",
+      "ms": 78.3
+    },
+    {
+      "step": "preload",
+      "n": 700,
+      "totalMs": 16326.7
+    }
+  ]
+}

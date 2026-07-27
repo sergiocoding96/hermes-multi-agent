@@ -1,0 +1,285 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Hermes Memory — Session Report</title>
+<style>
+  @page { size: 1280px 720px; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root{
+    --ink:#0f2042; --mid:#334155; --dim:#64748b; --line:#e2e8f0;
+    --accent:#ff8c42; --blue:#0891b2; --green:#16a34a; --red:#dc2626; --violet:#7c3aed;
+    --bg:#f8fafc;
+  }
+  html{font:16px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);}
+  .slide{
+    width:1280px; height:720px; padding:56px 72px; position:relative;
+    page-break-after:always; background:var(--bg); overflow:hidden;
+    display:flex; flex-direction:column;
+  }
+  .slide:last-child{page-break-after:auto;}
+  .kicker{font:700 13px/1 inherit; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); margin-bottom:10px;}
+  h1{font-size:40px; line-height:1.1; letter-spacing:-.01em; margin-bottom:14px;}
+  h2{font-size:30px; line-height:1.15; margin-bottom:20px; letter-spacing:-.01em;}
+  .sub{color:var(--dim); font-size:18px;}
+  ul{list-style:none; display:flex; flex-direction:column; gap:11px; margin-top:6px;}
+  li{position:relative; padding-left:26px; font-size:18px; color:var(--mid);}
+  li::before{content:""; position:absolute; left:4px; top:9px; width:8px; height:8px; border-radius:2px; background:var(--accent);}
+  li b{color:var(--ink);}
+  .foot{position:absolute; left:72px; right:72px; bottom:26px; display:flex; justify-content:space-between;
+        font-size:12px; color:var(--dim); border-top:1px solid var(--line); padding-top:10px;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:22px 40px; margin-top:6px;}
+  .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:20px 22px;}
+  .card h3{font-size:17px; margin-bottom:10px; display:flex; align-items:center; gap:8px;}
+  .card ul{gap:7px;} .card li{font-size:15px; padding-left:22px;} .card li::before{top:7px; width:7px; height:7px;}
+  .tag{display:inline-block; font:700 11px/1 inherit; letter-spacing:.08em; text-transform:uppercase;
+       padding:4px 9px; border-radius:999px;}
+  .t-ok{background:#dcfce7; color:#166534;} .t-no{background:#fee2e2; color:#991b1b;}
+  .t-next{background:#fef3c7; color:#92400e;} .t-info{background:#e0f2fe; color:#075985;}
+  .big{font-size:54px; font-weight:800; letter-spacing:-.02em; line-height:1;}
+  .stat{display:flex; flex-direction:column; gap:4px;}
+  .stat .n{font-size:34px; font-weight:800; line-height:1;}
+  .stat .l{font-size:13px; color:var(--dim);}
+  .statrow{display:flex; gap:40px; margin-top:18px; flex-wrap:wrap;}
+  .arrow{color:var(--accent); font-weight:800;}
+  .title-slide{background:linear-gradient(135deg,#0f2042 0%,#1e3a5f 60%,#7c3aed 140%); color:#fff; justify-content:center;}
+  .title-slide h1{font-size:52px; color:#fff; max-width:920px;}
+  .title-slide .kicker{color:var(--accent);}
+  .title-slide .sub{color:#cbd5e1; font-size:20px; margin-top:8px;}
+  .title-slide .meta{position:absolute; bottom:56px; left:72px; color:#94a3b8; font-size:14px;}
+  .mono{font-family:ui-monospace,Menlo,monospace; font-size:14px; background:#eef2f7; padding:1px 6px; border-radius:4px; color:#0f2042;}
+  .lead{font-size:20px; color:var(--mid); max-width:1000px; margin-bottom:10px;}
+  .pill-row{display:flex; gap:10px; flex-wrap:wrap; margin:14px 0 4px;}
+</style></head><body>
+
+<!-- 1 TITLE -->
+<section class="slide title-slide">
+  <div class="kicker">Hermes Multi-Agent · Memory System</div>
+  <h1>Capture-Outage Recovery, Memory-Quality Overhaul &amp; Roadmap</h1>
+  <div class="sub">One-session deep dive: what happened, what we fixed, what works, what doesn&rsquo;t, and what&rsquo;s next.</div>
+  <div class="meta">Session 2026-05-26 → 2026-05-27 · v2 <span class="mono" style="background:rgba(255,255,255,.12);color:#fff">@memtensor/memos-local-plugin</span> · branch <b style="color:#fff">mohrizk90/work</b></div>
+</section>
+
+<!-- 2 TL;DR -->
+<section class="slide">
+  <div class="kicker">Executive summary</div>
+  <h2>Memory looked &ldquo;reset&rdquo; — but nothing was lost. We recovered, cleaned, and hardened it.</h2>
+  <div class="statrow">
+    <div class="stat"><div class="n" style="color:var(--green)">0</div><div class="l">memories actually deleted</div></div>
+    <div class="stat"><div class="n">95,174<span class="arrow"> → </span>324</div><div class="l">traces (28k+ were duplicate re-inserts)</div></div>
+    <div class="stat"><div class="n" style="color:var(--green)">7.9<span class="arrow"> → </span>0.5</div><div class="l">system load (spiral → idle)</div></div>
+    <div class="stat"><div class="n">1.8 GB<span class="arrow"> → </span>566 MB</div><div class="l">DB size after VACUUM</div></div>
+  </div>
+  <ul style="margin-top:24px">
+    <li>Diagnosed &amp; recovered a <b>capture outage</b> (runaway re-insert loop + a bridge CPU death-spiral) — no data loss.</li>
+    <li>Hardened stability: <b>idempotency guard</b>, raised bridge timeouts, safe cleanup scripts, <b>:18800 daemon promoted to a systemd service</b>.</li>
+    <li>Ran a <b>memory-quality audit</b> and shipped 6 fixes (induction, reward, skills, world-model, viewer).</li>
+    <li>Upgraded the viewer: fixed login, console errors, and added <b>map memories toggle + reward-heat + bubble drill-down</b>.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>2 / 14</span></div>
+</section>
+
+<!-- 3 THE ALARM -->
+<section class="slide">
+  <div class="kicker">The alarm</div>
+  <h2>&ldquo;Memory has reset — I lost the last 3 weeks&rdquo;</h2>
+  <p class="lead">Three things stacked up to <i>look</i> like a wipe. None of them was data loss.</p>
+  <div class="grid2">
+    <div class="card"><h3>What it looked like</h3><ul>
+      <li>Viewer showed almost nothing; overview counts read &ldquo;—&rdquo;.</li>
+      <li>3D map was a sea of &ldquo;Empty turn sequences&rdquo;.</li>
+      <li>Recent days seemed missing.</li>
+    </ul></div>
+    <div class="card"><h3>What was actually true</h3><ul>
+      <li><b>Nothing deleted</b> — the DB held 95k rows on disk the whole time.</li>
+      <li>The v2 store was simply <b>born 2026-05-12</b>; there was never any pre-05-12 history in it (that lived in retired v1 MemOS).</li>
+      <li><b>Capture had stalled</b> days earlier, so no new memories were landing.</li>
+      <li>The map was a <b>stale snapshot</b> + the bulk was duplicate junk.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>3 / 14</span></div>
+</section>
+
+<!-- 4 ROOT CAUSE 1 -->
+<section class="slide">
+  <div class="kicker">Root cause #1</div>
+  <h2>Runaway capture re-insert loop</h2>
+  <div class="statrow">
+    <div class="stat"><div class="n" style="color:var(--red)">65,741</div><div class="l">trace rows written…</div></div>
+    <div class="stat"><div class="n">6</div><div class="l">…for just 6 real turns</div></div>
+    <div class="stat"><div class="n">$0.0115</div><div class="l">actual token cost of the session</div></div>
+  </div>
+  <ul style="margin-top:22px">
+    <li>One <span class="mono">arinze</span> lead-gen session: two turns re-inserted <b>33,840×</b> and <b>31,318×</b>; 64,957 were empty <span class="mono">(empty turn)</span> duplicates.</li>
+    <li>Chain: <span class="mono">web_search</span> tool-failure loop → the memory call <span class="mono">subagent.record</span> <b>timed out at 30s</b> → each timeout <b>re-inserted the same turn with no idempotency</b>.</li>
+    <li><b>Cost was DB bloat, not money</b> — only 30 LLM calls (~96k tokens). The damage was storage/IO + a choked pipeline.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>4 / 14</span></div>
+</section>
+
+<!-- 5 ROOT CAUSE 2 -->
+<section class="slide">
+  <div class="kicker">Root cause #2</div>
+  <h2>Bridge cold-boot CPU death-spiral</h2>
+  <ul>
+    <li>Each gateway bridge cold-loads the local <b>BGE-large</b> embedding model (~2 CPU cores, tens of seconds).</li>
+    <li>Concurrent boots <b>starve the CPU</b> so no single boot finishes before the bridge&rsquo;s <b>30s <span class="mono">session.open</span> timeout</b> fires.</li>
+    <li>Timeout → gateway <b>respawns the bridge</b> → more concurrent model loads → slower boots → more timeouts → <b>29 leaked processes</b>.</li>
+    <li>Made worse by two band-aid scripts running <span class="mono">pkill -f 'bridge.cts'</span> — which <b>also killed the :18800 viewer daemon</b> (and matched admin shells).</li>
+  </ul>
+  <div class="pill-row"><span class="tag t-info">load hit 8+</span><span class="tag t-info">bridges 4 → 29</span><span class="tag t-info">daemon repeatedly killed</span></div>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>5 / 14</span></div>
+</section>
+
+<!-- 6 RECOVERY -->
+<section class="slide">
+  <div class="kicker">Recovery</div>
+  <h2>Stabilize → clean → restart, carefully</h2>
+  <div class="grid2">
+    <div class="card"><h3>Data</h3><ul>
+      <li>Consistent <b>backup</b> before any mutation.</li>
+      <li><b>Global dedup</b>: 95,174 → 324 real traces (kept best row per <span class="mono">episode_id, turn_id</span>).</li>
+      <li>FTS index rebuilt; <b>VACUUM 1.8 GB → 566 MB</b>; integrity OK.</li>
+    </ul></div>
+    <div class="card"><h3>Runtime</h3><ul>
+      <li>Stopped the spiral (sergio/krati), killed leaked bridges <b>by explicit PID</b> (never the daemon).</li>
+      <li><b>Staggered</b> gateway restart → no re-spiral; load 7.9 → 0.5.</li>
+      <li>Relaunched the :18800 daemon, then made it permanent (next slide).</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>6 / 14</span></div>
+</section>
+
+<!-- 7 DURABLE STABILITY FIXES -->
+<section class="slide">
+  <div class="kicker">Durable fixes · stability</div>
+  <h2>So the outage can&rsquo;t recur the same way</h2>
+  <ul>
+    <li><b>Idempotency guard</b> — a <span class="mono">BEFORE INSERT</span> trigger silently drops a duplicate <span class="mono">(episode_id, turn_id)</span>; a timed-out retry can no longer re-inflate an episode. <i>Verified: 2nd insert dropped.</i></li>
+    <li><b>Raised bridge timeouts</b> — <span class="mono">session.open</span> 30→120 s, reconnect 4→90 s, so a cold boot finishes before the fatal timeout.</li>
+    <li><b>Safe cleanup library</b> replaces <span class="mono">pkill -f 'bridge.cts'</span> — targets only leaked node bridges, never the daemon or a shell; restarts staggered.</li>
+    <li><b>:18800 daemon → systemd unit</b> (<span class="mono">hermes-memos-daemon.service</span>, Restart=always, enabled) — was a fragile manual SSH-session process.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>7 / 14</span></div>
+</section>
+
+<!-- 8 VIEWER FIXES -->
+<section class="slide">
+  <div class="kicker">Viewer</div>
+  <h2>Login, console &amp; the 3D memory map</h2>
+  <div class="grid2">
+    <div class="card"><h3>Fixed</h3><ul>
+      <li><b>Login</b> — nginx greedily routed the viewer&rsquo;s <span class="mono">/api/v1/auth/login</span> to the Hermes dashboard; added a specific <span class="mono">/api/v1/ → :18800</span> rule.</li>
+      <li><b>Console errors</b> — mixed-content guard for the cross-daemon probe + an auth gate before <span class="mono">/api/v1/diag/namespace</span>.</li>
+    </ul></div>
+    <div class="card"><h3>New on the map</h3><ul>
+      <li><b>Memories toggle</b> — plot individual memory dots (off by default).</li>
+      <li><b>Reward-heat</b> — colour memories red→grey→green by learned value.</li>
+      <li><b>Bubble drill-down</b> — click a Topic → list its member memories → click one for detail.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>8 / 14</span></div>
+</section>
+
+<!-- 9 QUALITY ANALYSIS -->
+<section class="slide">
+  <div class="kicker">Memory-quality audit</div>
+  <h2>What the data looked like underneath</h2>
+  <div class="grid2">
+    <div class="card"><h3>Findings</h3><ul>
+      <li><b>Traces</b>: summaries good &amp; speaker-attributed; ~15–25% was test/trivial noise (pruned).</li>
+      <li><b>Skills</b>: 41, but only <b>4 invocations</b> — crystallized eagerly, hyper-specific, never re-matched.</li>
+      <li><b>Policies</b>: <b>155 success : 1 failure</b>; confidence pinned at the 0.5 default.</li>
+      <li><b>World-model</b>: near-duplicates, under-populated.</li>
+    </ul></div>
+    <div class="card"><h3>Reward loop (better than feared)</h3><ul>
+      <li>The <b>LLM judge is on &amp; firing</b>: 68/102 episodes have differentiated <span class="mono">r_task</span> (−0.75…0.82) → value.</li>
+      <li>But objective <b>tool-failure signals were never used</b>, and the per-step verifier→repair path was dormant.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>9 / 14</span></div>
+</section>
+
+<!-- 10 QUALITY FIXES -->
+<section class="slide">
+  <div class="kicker">Quality fixes shipped this session</div>
+  <h2>Make the memory learn better</h2>
+  <ul>
+    <li><b>#16 Failure-avoidance induction</b> — the L2 prompt now classifies <span class="mono">success_pattern</span> vs <span class="mono">failure_avoidance</span> from trace outcomes and emits anti-patterns. Fixes the 155:1 imbalance.</li>
+    <li><b>#18 World-model embedding-merge</b> — semantically-identical facts from different agents now merge (cosine ≥ 0.86) instead of creating near-duplicates.</li>
+    <li><b>#15 Outcome reward penalty</b> — a step with tool errors/loops now scores below neutral (−0.35), so failures rank low and seed avoid-policies.</li>
+    <li><b>#17 Crystallization bar + usage tracking</b> — a pattern must recur across ≥3 episodes (was 1) to become a skill; skill usage is now recorded on retrieval. <i>Verified: usage 2 → 8 in one run.</i></li>
+    <li><b>Pruned</b> test-artifact memories, dead/duplicate skills, and a duplicate world-model.</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>10 / 14</span></div>
+</section>
+
+<!-- 11 WHAT WORKS -->
+<section class="slide">
+  <div class="kicker">Status</div>
+  <h2><span class="tag t-ok">What works</span></h2>
+  <div class="grid2">
+    <div class="card"><h3>🟢 Stability</h3><ul>
+      <li>:18800 daemon healthy &amp; under systemd (survives reboot).</li>
+      <li>No bridge leak — count stable; load idle.</li>
+      <li>Capture is idempotent — episodes can&rsquo;t re-inflate.</li>
+      <li>All 8 agent gateways active; this Claude-Code session also captures.</li>
+    </ul></div>
+    <div class="card"><h3>🟢 Memory &amp; viewer</h3><ul>
+      <li>DB clean (324 real traces), FTS in sync, integrity OK.</li>
+      <li>LLM reward judge firing → differentiated value.</li>
+      <li>Viewer login works; map has heat + drill-down.</li>
+      <li>Graph auto-refresh watcher succeeds again (was timing out).</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>11 / 14</span></div>
+</section>
+
+<!-- 12 WHAT DOESN'T -->
+<section class="slide">
+  <div class="kicker">Status</div>
+  <h2><span class="tag t-no">What doesn&rsquo;t (yet)</span></h2>
+  <ul>
+    <li><b>Boot-reflection still blocks <span class="mono">server.started</span></b> — one dirty episode took 154 s; first boot after a mess is slow (subsequent boots fast).</li>
+    <li><b>Bridge concurrency is mitigated, not solved</b> — raised timeouts + staggering help, but each gateway still boots its own full BGE-large instance.</li>
+    <li><b>Per-step verifier feedback is dormant</b> — the episode-level LLM judge works, but fine-grained step feedback → policy repairs only fires on explicit markers nobody sends.</li>
+    <li><b>No human-in-the-loop signal</b> — reward is LLM-self-graded; no 👍/👎 correction channel in use.</li>
+    <li><b>Web stack idle-stopped</b> — Firecrawl + SearXNG docker are down (on-demand); 2/36 stress checks fail because of it (not memory).</li>
+  </ul>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>12 / 14</span></div>
+</section>
+
+<!-- 13 WHAT'S LEFT -->
+<section class="slide">
+  <div class="kicker">Roadmap</div>
+  <h2><span class="tag t-next">What&rsquo;s left</span></h2>
+  <div class="grid2">
+    <div class="card"><h3>Architecture (highest leverage)</h3><ul>
+      <li><b>Serialize bridge boots</b> (a cross-gateway lock) so only one model loads at a time.</li>
+      <li><b>Shared single daemon</b> — gateways become thin clients of :18800 instead of each loading BGE-large.</li>
+      <li><b>Background the boot-reflection</b> so it never blocks startup.</li>
+    </ul></div>
+    <div class="card"><h3>Learning quality</h3><ul>
+      <li><b>Per-step LLM verifier</b> → automatic finer-grained policy repairs.</li>
+      <li><b>Close the human-feedback loop</b> (implicit next-turn + 👍/👎).</li>
+      <li><b>Auto-prune</b> dead/unused skills as usage data accrues.</li>
+    </ul></div>
+  </div>
+  <div class="foot"><span>Hermes Memory — Session Report</span><span>13 / 14</span></div>
+</section>
+
+<!-- 14 FINAL STATE -->
+<section class="slide" style="background:linear-gradient(135deg,#0f2042,#1e3a5f); color:#fff;">
+  <div class="kicker" style="color:var(--accent)">Final state</div>
+  <h2 style="color:#fff">Healthy, cleaner, and learning better</h2>
+  <div class="statrow">
+    <div class="stat"><div class="n" style="color:#4ade80">200</div><div class="l" style="color:#cbd5e1">:18800 health</div></div>
+    <div class="stat"><div class="n" style="color:#fff">324</div><div class="l" style="color:#cbd5e1">clean traces (FTS in sync)</div></div>
+    <div class="stat"><div class="n" style="color:#fff">9</div><div class="l" style="color:#cbd5e1">commits on mohrizk90/work</div></div>
+    <div class="stat"><div class="n" style="color:#4ade80">idle</div><div class="l" style="color:#cbd5e1">system load</div></div>
+  </div>
+  <ul style="margin-top:26px">
+    <li style="color:#e2e8f0">Decision doc: <span class="mono" style="background:rgba(255,255,255,.12);color:#fff">memos-setup/learnings/2026-05-26-capture-outage-rca-recovery.md</span></li>
+    <li style="color:#e2e8f0">All fixes committed &amp; verified (daemon boots clean; stress-test 34/36, 2 = idle web stack).</li>
+    <li style="color:#e2e8f0">Next priority: the architecture items (serialize boots / shared daemon) to make stability structural.</li>
+  </ul>
+  <div class="foot" style="color:#94a3b8; border-color:rgba(255,255,255,.15)"><span>Hermes Memory — Session Report · 2026-05-27</span><span>14 / 14</span></div>
+</section>
+
+</body></html>

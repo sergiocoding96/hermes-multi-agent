@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes memory-graph.json auto-refresh watcher (WAL-driven)
+Documentation=memos-setup/learnings/2026-05-17-v2-only-bge-shares.md
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/openclaw/Coding/Hermes
+ExecStart=/home/openclaw/.hermes/tools-venv/bin/python /home/openclaw/Coding/Hermes/tools/memory-graph-watcher.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
